@@ -31,6 +31,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+// Metadata not needed for client components
+
 interface CustomTool {
   id: string;
   name: string;

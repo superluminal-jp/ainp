@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+// Metadata not needed for client components
+
 interface CustomDatabase {
   id: string;
   name: string;

@@ -43,6 +43,9 @@ import {
   Wrench,
   ChevronDown,
   Save,
+  Zap,
+  FileText,
+  Layout,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -711,6 +714,51 @@ export default function Home() {
             </DropdownMenu>
           </div>
           <div className="flex items-center space-x-2">
+            <Link href="/generator">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0"
+                title="Page Generator"
+              >
+                <Zap className="h-3 w-3" />
+              </Button>
+            </Link>
+            <Link href="/generated">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0"
+                title="Generated Pages"
+              >
+                <FileText className="h-3 w-3" />
+              </Button>
+            </Link>
+            <Link href="/templates">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0"
+                title="Page Templates"
+              >
+                <Layout className="h-3 w-3" />
+              </Button>
+            </Link>
+            <Link href="/components">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0"
+                title="Components"
+              >
+                <div className="h-3 w-3 grid grid-cols-2 gap-px">
+                  <div className="bg-current rounded-sm"></div>
+                  <div className="bg-current rounded-sm"></div>
+                  <div className="bg-current rounded-sm"></div>
+                  <div className="bg-current rounded-sm"></div>
+                </div>
+              </Button>
+            </Link>
             <Link href="/databases">
               <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
                 <Database className="h-3 w-3" />
