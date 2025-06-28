@@ -57,6 +57,23 @@ const schema = a.schema({
       allow.owner().to(["read", "create", "update", "delete"]),
       allow.authenticated().to(["read"]),
     ]),
+
+  templates: a
+    .model({
+      id: a.id().required(),
+      name: a.string().required(),
+      description: a.string().required(),
+      systemPromptId: a.id().required(),
+      databaseIds: a.json().required(),
+      toolIds: a.json().required(),
+      isActive: a.boolean().default(true),
+      createdAt: a.datetime().required(),
+      owner: a.string(),
+    })
+    .authorization((allow) => [
+      allow.owner().to(["read", "create", "update", "delete"]),
+      allow.authenticated().to(["read"]),
+    ]),
 });
 
 export type Schema = ClientSchema<typeof schema>;
