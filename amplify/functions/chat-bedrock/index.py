@@ -45,6 +45,12 @@ def handler(event, context):
             f"System prompt length: {len(system_prompt)}, Model ID: {model_id}"
         )
 
+        # Log system prompt content for debugging (first 200 chars)
+        logger.info(
+            f"[ChatBedrock] System prompt content: "
+            f"{system_prompt[:200]}{'...' if len(system_prompt) > 200 else ''}"
+        )
+
         if (
             not messages_data
             or not isinstance(messages_data, list)
@@ -69,8 +75,13 @@ def handler(event, context):
         messages = []
 
         # Add system message if provided
-        if system_prompt:
+        if system_prompt and system_prompt.strip():
             messages.append(SystemMessage(content=system_prompt))
+            logger.info(
+                f"[ChatBedrock] Added system message with {len(system_prompt)} characters"
+            )
+        else:
+            logger.warning("[ChatBedrock] No system prompt provided or empty")
 
         # Process messages array with error handling
         # Keep last 10 messages for context to avoid token limits
