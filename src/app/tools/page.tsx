@@ -14,170 +14,104 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { useState, useEffect } from "react";
 import {
-  ArrowLeft,
   Plus,
   Edit,
   Trash2,
-  MessageSquare,
-  Send,
   X,
   Wrench,
-  Code,
-  Globe,
-  Calculator,
-  FileText,
+  Search,
+  Upload,
+  CheckCircle,
+  AlertCircle,
+  Download,
 } from "lucide-react";
-import Link from "next/link";
+import { AppHeader } from "@/components/app-header";
+import { generateClient } from "aws-amplify/data";
+import { uploadData, getUrl } from "aws-amplify/storage";
+import type { Schema } from "../../../amplify/data/resource";
+import { Tool, ToolParameter } from "@/lib/types";
 
-// Metadata not needed for client components
-
-interface CustomTool {
-  id: string;
-  name: string;
-  description: string;
-  category: "web" | "code" | "file" | "calc" | "custom";
-  endpoint?: string;
-  parameters: ToolParameter[];
-  isActive: boolean;
-  createdAt: Date;
-}
-
-interface ToolParameter {
-  id: string;
-  name: string;
-  type: "string" | "number" | "boolean" | "array" | "object";
-  description: string;
-  required: boolean;
-  defaultValue?: string;
-}
-
-interface ChatMessage {
-  id: string;
-  content: string;
-  sender: "user" | "assistant";
-  timestamp: Date;
-}
-
-const toolCategories = {
-  web: {
-    name: "Web Tools",
-    icon: Globe,
-    description: "Web scraping, API calls, HTTP requests",
-  },
-  code: {
-    name: "Code Tools",
-    icon: Code,
-    description: "Code execution, compilation, analysis",
-  },
-  file: {
-    name: "File Tools",
-    icon: FileText,
-    description: "File operations, processing, conversion",
-  },
-  calc: {
-    name: "Calculator Tools",
-    icon: Calculator,
-    description: "Mathematical calculations, data analysis",
-  },
-  custom: {
-    name: "Custom Tools",
-    icon: Wrench,
-    description: "Custom functionality and integrations",
-  },
-};
-
-const chatHelperPrompts = [
-  {
-    id: "tool-structure",
-    title: "Tool Structure",
-    content:
-      "Help me understand the basic structure of a custom tool with parameters and endpoints.",
-  },
-  {
-    id: "web-tool",
-    title: "Web Tool Example",
-    content:
-      "Show me how to create a web scraping tool with URL and selector parameters.",
-  },
-  {
-    id: "api-tool",
-    title: "API Integration",
-    content:
-      "Help me create a tool that calls external APIs with authentication and parameters.",
-  },
-  {
-    id: "file-processor",
-    title: "File Processor",
-    content:
-      "Create a tool that processes uploaded files (CSV, JSON, text) and extracts data.",
-  },
-  {
-    id: "calculator",
-    title: "Calculator Tool",
-    content:
-      "Help me build a mathematical calculation tool with multiple operations.",
-  },
-];
+// Initialize Amplify client
+const client = generateClient<Schema>();
 
 export default function ToolsPage() {
-  const [isDark, setIsDark] = useState(true);
-  const [customTools, setCustomTools] = useState<CustomTool[]>([]);
+  const [customTools, setCustomTools] = useState<Tool[]>([]);
+  const [filteredTools, setFilteredTools] = useState<Tool[]>([]);
   const [isEditing, setIsEditing] = useState(false);
-  const [editingTool, setEditingTool] = useState<CustomTool | null>(null);
-  const [showChatHelper, setShowChatHelper] = useState(false);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
+  const [editingTool, setEditingTool] = useState<Tool | null>(null);
+  const [pythonCode, setPythonCode] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [notification, setNotification] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
-    category: "custom" as keyof typeof toolCategories,
-    endpoint: "",
   });
   const [parameters, setParameters] = useState<ToolParameter[]>([]);
+  const [validationErrors, setValidationErrors] = useState<{
+    [key: string]: string;
+  }>({});
 
   useEffect(() => {
-    const darkClass = document.documentElement.classList.contains("dark");
-    setIsDark(darkClass);
-
-    // Load custom tools from localStorage
-    const saved = localStorage.getItem("customTools");
-    if (saved) {
-      const parsedTools = JSON.parse(saved).map(
-        (tool: CustomTool & { createdAt: string }) => ({
-          ...tool,
-          createdAt: new Date(tool.createdAt),
-        })
-      );
-      setCustomTools(parsedTools);
-    }
-
-    // Initialize chat helper
-    setChatMessages([
-      {
-        id: "1",
-        content:
-          "Hi! I'm here to help you create custom tools. I can assist with tool structure, parameters, endpoints, and provide examples for different types of tools. What would you like to build?",
-        sender: "assistant",
-        timestamp: new Date(),
-      },
-    ]);
+    // Load tools from Amplify
+    loadTools();
   }, []);
 
-  const toggleTheme = (checked: boolean) => {
-    setIsDark(checked);
-    if (checked) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
+  // Filter tools based on search and filters
+  useEffect(() => {
+    let filtered = customTools;
+
+    // Search filter
+    if (searchQuery) {
+      filtered = filtered.filter(
+        (tool) =>
+          tool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          tool.description.toLowerCase().includes(searchQuery.toLowerCase())
+      );
     }
+
+    // Status filter
+    if (statusFilter !== "all") {
+      filtered = filtered.filter((tool) =>
+        statusFilter === "active" ? tool.isActive : !tool.isActive
+      );
+    }
+
+    setFilteredTools(filtered);
+  }, [customTools, searchQuery, statusFilter]);
+
+  const showNotification = (type: "success" | "error", message: string) => {
+    setNotification({ type, message });
+    setTimeout(() => setNotification(null), 3000);
   };
 
-  const saveTools = (tools: CustomTool[]) => {
-    setCustomTools(tools);
-    localStorage.setItem("customTools", JSON.stringify(tools));
+  const loadTools = async () => {
+    try {
+      const { data: tools } = await client.models.tools.list();
+      const formattedTools: Tool[] = tools.map((tool) => ({
+        id: tool.id,
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters
+          ? JSON.parse(tool.parameters as string)
+          : [],
+        pythonCodeKey: tool.pythonCodeKey,
+        isActive: Boolean(tool.isActive ?? true),
+        createdAt: new Date(tool.createdAt),
+        owner: tool.owner || undefined,
+      }));
+      setCustomTools(formattedTools);
+    } catch (error) {
+      console.error("Error loading tools:", error);
+      showNotification("error", "Failed to load tools");
+    }
   };
 
   const addParameter = () => {
@@ -207,539 +141,588 @@ export default function ToolsPage() {
     setParameters((prev) => prev.filter((param) => param.id !== id));
   };
 
-  const handleAddTool = () => {
-    if (!formData.name.trim() || !formData.description.trim()) return;
+  const validateForm = () => {
+    const errors: { [key: string]: string } = {};
 
-    const newTool: CustomTool = {
-      id: Date.now().toString(),
-      name: formData.name.trim(),
-      description: formData.description.trim(),
-      category: formData.category,
-      endpoint: formData.endpoint.trim() || undefined,
-      parameters: parameters.filter((p) => p.name.trim()),
-      isActive: true,
-      createdAt: new Date(),
-    };
+    if (!formData.name.trim()) {
+      errors.name = "Tool name is required";
+    }
+    if (!formData.description.trim()) {
+      errors.description = "Description is required";
+    }
+    if (!pythonCode.trim()) {
+      errors.pythonCode = "Python code is required";
+    }
 
-    saveTools([...customTools, newTool]);
-    resetForm();
+    // Validate parameters
+    parameters.forEach((param, index) => {
+      if (!param.name.trim()) {
+        errors[`param_${index}_name`] = "Parameter name is required";
+      }
+      if (!param.description.trim()) {
+        errors[`param_${index}_description`] =
+          "Parameter description is required";
+      }
+    });
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
-  const handleEditTool = (tool: CustomTool) => {
+  const exportTool = (tool: Tool) => {
+    const exportData = {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+      // Note: Python code would need to be fetched separately for security
+    };
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${tool.name.replace(/\s+/g, "_")}_config.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const importTool = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const importData = JSON.parse(text);
+
+      setFormData({
+        name: importData.name || "",
+        description: importData.description || "",
+      });
+      setParameters(importData.parameters || []);
+      setValidationErrors({});
+      showNotification("success", "Tool configuration imported successfully");
+    } catch (error) {
+      showNotification("error", "Failed to import tool configuration");
+    }
+
+    // Reset file input
+    event.target.value = "";
+  };
+
+  const uploadPythonCode = async (code: string, toolId: string) => {
+    try {
+      const fileName = `lambda_${toolId}.py`;
+      const result = await uploadData({
+        path: `tools/lambda/shared/${fileName}`,
+        data: new Blob([code], { type: "text/plain" }),
+      }).result;
+      return result.path;
+    } catch (error) {
+      console.error("Error uploading Python code:", error);
+      throw error;
+    }
+  };
+
+  const downloadPythonCode = async (tool: Tool) => {
+    try {
+      const url = await getUrl({
+        path: tool.pythonCodeKey,
+      });
+      const response = await fetch(url.url.toString());
+      const code = await response.text();
+
+      const blob = new Blob([code], { type: "text/plain" });
+      const downloadUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = `${tool.name.replace(/\s+/g, "_")}_lambda.py`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      console.error("Error downloading Python code:", error);
+      showNotification("error", "Failed to download Python code");
+    }
+  };
+
+  const handleAddTool = async () => {
+    if (!validateForm()) {
+      showNotification("error", "Please fix validation errors");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const toolId = Date.now().toString();
+      const pythonCodeKey = await uploadPythonCode(pythonCode, toolId);
+
+      await client.models.tools.create({
+        name: formData.name.trim(),
+        description: formData.description.trim(),
+        parameters: JSON.stringify(parameters.filter((p) => p.name.trim())),
+        pythonCodeKey,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      });
+
+      await loadTools();
+      resetForm();
+      showNotification("success", "Tool created successfully!");
+    } catch (error) {
+      console.error("Error adding tool:", error);
+      showNotification("error", "Failed to create tool");
+    }
+    setIsSaving(false);
+  };
+
+  const handleEditTool = async (tool: Tool) => {
     setEditingTool(tool);
     setFormData({
       name: tool.name,
       description: tool.description,
-      category: tool.category,
-      endpoint: tool.endpoint || "",
     });
     setParameters(tool.parameters);
     setIsEditing(true);
+
+    // Load existing Python code
+    try {
+      const url = await getUrl({
+        path: tool.pythonCodeKey,
+      });
+      const response = await fetch(url.url.toString());
+      const code = await response.text();
+      setPythonCode(code);
+    } catch (error) {
+      console.error("Error loading Python code:", error);
+      showNotification("error", "Failed to load Python code");
+    }
   };
 
-  const handleUpdateTool = () => {
-    if (!editingTool || !formData.name.trim() || !formData.description.trim())
+  const handleUpdateTool = async () => {
+    if (!editingTool || !validateForm()) {
+      showNotification("error", "Please fix validation errors");
       return;
+    }
 
-    const updated = customTools.map((tool) =>
-      tool.id === editingTool.id
-        ? {
-            ...tool,
-            name: formData.name.trim(),
-            description: formData.description.trim(),
-            category: formData.category,
-            endpoint: formData.endpoint.trim() || undefined,
-            parameters: parameters.filter((p) => p.name.trim()),
-          }
-        : tool
-    );
+    setIsSaving(true);
+    try {
+      let pythonCodeKey = editingTool.pythonCodeKey;
 
-    saveTools(updated);
-    resetForm();
+      // Upload new Python code if changed
+      const currentUrl = await getUrl({
+        path: editingTool.pythonCodeKey,
+      });
+      const currentResponse = await fetch(currentUrl.url.toString());
+      const currentCode = await currentResponse.text();
+
+      if (currentCode !== pythonCode) {
+        pythonCodeKey = await uploadPythonCode(pythonCode, editingTool.id);
+      }
+
+      await client.models.tools.update({
+        id: editingTool.id,
+        name: formData.name.trim(),
+        description: formData.description.trim(),
+        parameters: JSON.stringify(parameters.filter((p) => p.name.trim())),
+        pythonCodeKey,
+      });
+
+      await loadTools();
+      resetForm();
+      showNotification("success", "Tool updated successfully!");
+    } catch (error) {
+      console.error("Error updating tool:", error);
+      showNotification("error", "Failed to update tool");
+    }
+    setIsSaving(false);
   };
 
-  const handleDeleteTool = (id: string) => {
-    const filtered = customTools.filter((tool) => tool.id !== id);
-    saveTools(filtered);
+  const handleDeleteTool = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete "${name}"?`)) {
+      return;
+    }
+
+    try {
+      await client.models.tools.delete({ id });
+      await loadTools();
+      showNotification("success", "Tool deleted successfully");
+    } catch (error) {
+      console.error("Error deleting tool:", error);
+      showNotification("error", "Failed to delete tool");
+    }
   };
 
-  const toggleToolActive = (id: string) => {
-    const updated = customTools.map((tool) =>
-      tool.id === id ? { ...tool, isActive: !tool.isActive } : tool
-    );
-    saveTools(updated);
+  const toggleToolActive = async (id: string) => {
+    try {
+      const tool = customTools.find((t) => t.id === id);
+      if (tool) {
+        await client.models.tools.update({
+          id,
+          isActive: !tool.isActive,
+        });
+        await loadTools();
+        showNotification(
+          "success",
+          `Tool ${!tool.isActive ? "activated" : "deactivated"}`
+        );
+      }
+    } catch (error) {
+      console.error("Error toggling tool active state:", error);
+      showNotification("error", "Failed to update tool status");
+    }
   };
 
   const resetForm = () => {
     setFormData({
       name: "",
       description: "",
-      category: "custom",
-      endpoint: "",
     });
     setParameters([]);
+    setPythonCode("");
     setEditingTool(null);
     setIsEditing(false);
   };
 
-  const handleChatSend = async () => {
-    if (!chatInput.trim()) return;
-
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      content: chatInput.trim(),
-      sender: "user",
-      timestamp: new Date(),
-    };
-
-    setChatMessages((prev) => [...prev, userMessage]);
-    setChatInput("");
-    setIsTyping(true);
-
-    // Simulate AI response
-    setTimeout(() => {
-      const responses = [
-        'Here\'s a basic tool structure:\n\n```json\n{\n  "name": "My Tool",\n  "description": "Tool description",\n  "parameters": [\n    {\n      "name": "input",\n      "type": "string",\n      "required": true\n    }\n  ]\n}\n```',
-        "For a web scraping tool, you'll need:\n\n1. URL parameter (string, required)\n2. CSS selector parameter (string, required)\n3. Optional headers parameter (object)\n\nEndpoint: `/api/scrape`",
-        "API integration tools typically need:\n\n• API endpoint URL\n• Authentication method (API key, OAuth)\n• Request parameters\n• Response format specification",
-        "File processing tools should include:\n\n• File input parameter\n• Processing type (parse, convert, analyze)\n• Output format specification\n• Error handling for unsupported files",
-        "Calculator tools can have:\n\n• Expression parameter (string)\n• Variables parameter (object)\n• Precision parameter (number)\n• Result format (decimal, fraction, scientific)",
-      ];
-
-      const aiResponse: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        content: responses[Math.floor(Math.random() * responses.length)],
-        sender: "assistant",
-        timestamp: new Date(),
-      };
-
-      setChatMessages((prev) => [...prev, aiResponse]);
-      setIsTyping(false);
-    }, 1000 + Math.random() * 2000);
-  };
-
-  const applyChatSuggestion = (suggestion: string) => {
-    // Parse and apply suggestions to the form
-    if (suggestion.includes("web scraping")) {
-      setFormData((prev) => ({
-        ...prev,
-        name: "Web Scraper",
-        description: "Extract content from web pages using CSS selectors",
-        category: "web",
-        endpoint: "/api/scrape",
-      }));
-      setParameters([
-        {
-          id: "1",
-          name: "url",
-          type: "string",
-          description: "Target URL to scrape",
-          required: true,
-        },
-        {
-          id: "2",
-          name: "selector",
-          type: "string",
-          description: "CSS selector for content extraction",
-          required: true,
-        },
-      ]);
-    }
-    // Add more suggestion parsing logic here
-  };
-
   return (
-    <div className="h-screen bg-background text-foreground flex flex-col">
-      {/* Header */}
-      <header className="border-b border-border shrink-0">
-        <div className="px-3 py-2 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Link href="/">
-              <Button variant="ghost" size="sm" className="h-6 px-2">
-                <ArrowLeft className="h-3 w-3" />
-              </Button>
-            </Link>
-            <h1 className="text-sm font-medium">Custom Tools</h1>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowChatHelper(!showChatHelper)}
-              className={`h-6 w-6 p-0 ${showChatHelper ? "bg-muted" : ""}`}
-            >
-              <MessageSquare className="h-3 w-3" />
-            </Button>
-            <Switch
-              checked={isDark}
-              onCheckedChange={toggleTheme}
-              className="scale-75"
-            />
+    <>
+      <AppHeader />
+      {/* Notification */}
+      {notification && (
+        <div className="fixed top-4 right-4 z-50">
+          <div
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg shadow-lg ${
+              notification.type === "success"
+                ? "bg-green-100 text-green-800 border border-green-200"
+                : "bg-red-100 text-red-800 border border-red-200"
+            }`}
+          >
+            {notification.type === "success" ? (
+              <CheckCircle className="h-4 w-4" />
+            ) : (
+              <AlertCircle className="h-4 w-4" />
+            )}
+            <span className="text-sm">{notification.message}</span>
           </div>
         </div>
-      </header>
+      )}
 
-      <div className="flex-1 flex">
-        {/* Form Panel */}
-        <div
-          className={`${
-            showChatHelper ? "w-1/4" : "w-1/3"
-          } border-r border-border p-3`}
-        >
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm">
-                {isEditing ? "Edit Tool" : "Add New Tool"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="space-y-1">
-                <Label htmlFor="name" className="text-xs">
-                  Tool Name
-                </Label>
-                <Input
-                  id="name"
-                  placeholder="My Custom Tool"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
-                  className="h-7 text-xs"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="description" className="text-xs">
-                  Description
-                </Label>
-                <Textarea
-                  id="description"
-                  placeholder="Describe what this tool does..."
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
-                  className="min-h-20 text-xs"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="category" className="text-xs">
-                  Category
-                </Label>
-                <Select
-                  value={formData.category}
-                  onValueChange={(value: keyof typeof toolCategories) =>
-                    setFormData({ ...formData, category: value })
-                  }
-                >
-                  <SelectTrigger className="h-7 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(toolCategories).map(([key, category]) => (
-                      <SelectItem key={key} value={key}>
-                        {category.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="endpoint" className="text-xs">
-                  API Endpoint (Optional)
-                </Label>
-                <Input
-                  id="endpoint"
-                  placeholder="/api/my-tool"
-                  value={formData.endpoint}
-                  onChange={(e) =>
-                    setFormData({ ...formData, endpoint: e.target.value })
-                  }
-                  className="h-7 text-xs"
-                />
-              </div>
-
-              {/* Parameters Section */}
-              <div className="space-y-2">
+      <div className="h-screen bg-background text-foreground flex flex-col">
+        <div className="flex-1 flex">
+          {/* Form Panel */}
+          <div className="w-1/3 border-r border-border p-3">
+            <Card>
+              <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs">Parameters</Label>
-                  <Button
-                    type="button"
-                    onClick={addParameter}
-                    variant="outline"
-                    size="sm"
-                    className="h-5 px-2 text-xs"
-                  >
-                    <Plus className="h-2 w-2 mr-1" />
-                    Add
-                  </Button>
+                  <CardTitle className="text-sm">
+                    {isEditing ? "Edit Tool" : "Add New Tool"}
+                  </CardTitle>
+                  <div className="flex gap-1">
+                    {!isEditing && (
+                      <>
+                        <input
+                          type="file"
+                          accept=".json"
+                          onChange={importTool}
+                          className="hidden"
+                          id="import-tool"
+                        />
+                        <label htmlFor="import-tool">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0"
+                            title="Import configuration"
+                            asChild
+                          >
+                            <span>
+                              <Upload className="h-3 w-3" />
+                            </span>
+                          </Button>
+                        </label>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="space-y-1">
+                  <Label htmlFor="name" className="text-xs">
+                    Tool Name <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="name"
+                    placeholder="My Custom Tool"
+                    value={formData.name}
+                    onChange={(e) => {
+                      setFormData({ ...formData, name: e.target.value });
+                      if (validationErrors.name) {
+                        setValidationErrors((prev) => ({ ...prev, name: "" }));
+                      }
+                    }}
+                    className={`h-7 text-xs ${validationErrors.name ? "border-red-500" : ""}`}
+                  />
+                  {validationErrors.name && (
+                    <p className="text-xs text-red-500">
+                      {validationErrors.name}
+                    </p>
+                  )}
                 </div>
 
-                {parameters.length > 0 && (
-                  <ScrollArea className="max-h-40">
-                    <div className="space-y-2">
-                      {parameters.map((param) => (
-                        <div
-                          key={param.id}
-                          className="border rounded p-2 space-y-1"
-                        >
-                          <div className="flex items-center justify-between">
-                            <Input
-                              placeholder="Parameter name"
-                              value={param.name}
-                              onChange={(e) =>
-                                updateParameter(
-                                  param.id,
-                                  "name",
-                                  e.target.value
-                                )
-                              }
-                              className="h-5 text-xs flex-1 mr-1"
-                            />
-                            <Button
-                              type="button"
-                              onClick={() => removeParameter(param.id)}
-                              variant="ghost"
-                              size="sm"
-                              className="h-5 w-5 p-0"
-                            >
-                              <X className="h-2 w-2" />
-                            </Button>
-                          </div>
-                          <div className="grid grid-cols-2 gap-1">
-                            <Select
-                              value={param.type}
-                              onValueChange={(value: string) =>
-                                updateParameter(param.id, "type", value)
-                              }
-                            >
-                              <SelectTrigger className="h-5 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="string">String</SelectItem>
-                                <SelectItem value="number">Number</SelectItem>
-                                <SelectItem value="boolean">Boolean</SelectItem>
-                                <SelectItem value="array">Array</SelectItem>
-                                <SelectItem value="object">Object</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <div className="flex items-center space-x-1">
-                              <input
-                                type="checkbox"
-                                checked={param.required}
+                <div className="space-y-1">
+                  <Label htmlFor="description" className="text-xs">
+                    Description <span className="text-red-500">*</span>
+                  </Label>
+                  <Textarea
+                    id="description"
+                    placeholder="Describe what this tool does..."
+                    value={formData.description}
+                    onChange={(e) =>
+                      setFormData({ ...formData, description: e.target.value })
+                    }
+                    className="min-h-20 text-xs"
+                  />
+                </div>
+
+                {/* Parameters Section */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Parameters</Label>
+                    <Button
+                      type="button"
+                      onClick={addParameter}
+                      variant="outline"
+                      size="sm"
+                      className="h-5 px-2 text-xs"
+                    >
+                      <Plus className="h-2 w-2 mr-1" />
+                      Add
+                    </Button>
+                  </div>
+
+                  {parameters.length > 0 && (
+                    <ScrollArea className="max-h-40">
+                      <div className="space-y-2">
+                        {parameters.map((param) => (
+                          <div
+                            key={param.id}
+                            className="border rounded p-2 space-y-1"
+                          >
+                            <div className="flex items-center justify-between">
+                              <Input
+                                placeholder="Parameter name"
+                                value={param.name}
                                 onChange={(e) =>
                                   updateParameter(
                                     param.id,
-                                    "required",
-                                    e.target.checked
+                                    "name",
+                                    e.target.value
                                   )
                                 }
-                                className="scale-75"
+                                className="h-5 text-xs flex-1 mr-1"
                               />
-                              <span className="text-xs">Required</span>
+                              <Button
+                                type="button"
+                                onClick={() => removeParameter(param.id)}
+                                variant="ghost"
+                                size="sm"
+                                className="h-5 w-5 p-0"
+                              >
+                                <X className="h-2 w-2" />
+                              </Button>
                             </div>
+                            <div className="grid grid-cols-2 gap-1">
+                              <Select
+                                value={param.type}
+                                onValueChange={(value: string) =>
+                                  updateParameter(param.id, "type", value)
+                                }
+                              >
+                                <SelectTrigger className="h-5 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="string">String</SelectItem>
+                                  <SelectItem value="number">Number</SelectItem>
+                                  <SelectItem value="boolean">
+                                    Boolean
+                                  </SelectItem>
+                                  <SelectItem value="array">Array</SelectItem>
+                                  <SelectItem value="object">Object</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <div className="flex items-center space-x-1">
+                                <input
+                                  type="checkbox"
+                                  checked={param.required}
+                                  onChange={(e) =>
+                                    updateParameter(
+                                      param.id,
+                                      "required",
+                                      e.target.checked
+                                    )
+                                  }
+                                  className="scale-75"
+                                />
+                                <span className="text-xs">Required</span>
+                              </div>
+                            </div>
+                            <Input
+                              placeholder="Parameter description"
+                              value={param.description}
+                              onChange={(e) =>
+                                updateParameter(
+                                  param.id,
+                                  "description",
+                                  e.target.value
+                                )
+                              }
+                              className="h-5 text-xs"
+                            />
                           </div>
-                          <Input
-                            placeholder="Parameter description"
-                            value={param.description}
-                            onChange={(e) =>
-                              updateParameter(
-                                param.id,
-                                "description",
-                                e.target.value
-                              )
-                            }
-                            className="h-5 text-xs"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                )}
-              </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  )}
+                </div>
 
-              <div className="flex gap-2">
-                {isEditing ? (
-                  <>
+                {/* Python Code Section */}
+                <div className="space-y-1">
+                  <Label htmlFor="python-code" className="text-xs">
+                    Python Lambda Code <span className="text-red-500">*</span>
+                  </Label>
+                  <Textarea
+                    id="python-code"
+                    placeholder={`def lambda_handler(event, context):
+    # Your lambda function code here
+    return {
+        'statusCode': 200,
+        'body': 'Hello from Lambda!'
+    }`}
+                    value={pythonCode}
+                    onChange={(e) => setPythonCode(e.target.value)}
+                    className="min-h-32 text-xs font-mono"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  {isEditing ? (
+                    <>
+                      <Button
+                        onClick={handleUpdateTool}
+                        size="sm"
+                        className="flex-1 h-7 text-xs"
+                        disabled={
+                          !formData.name.trim() ||
+                          !formData.description.trim() ||
+                          !pythonCode.trim() ||
+                          isSaving
+                        }
+                      >
+                        {isSaving ? (
+                          <Upload className="h-3 w-3 mr-1 animate-spin" />
+                        ) : (
+                          <Edit className="h-3 w-3 mr-1" />
+                        )}
+                        {isSaving ? "Updating..." : "Update"}
+                      </Button>
+                      <Button
+                        onClick={resetForm}
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 h-7 text-xs"
+                      >
+                        Cancel
+                      </Button>
+                    </>
+                  ) : (
                     <Button
-                      onClick={handleUpdateTool}
+                      onClick={handleAddTool}
                       size="sm"
                       className="flex-1 h-7 text-xs"
                       disabled={
-                        !formData.name.trim() || !formData.description.trim()
+                        !formData.name.trim() ||
+                        !formData.description.trim() ||
+                        !pythonCode.trim() ||
+                        isSaving
                       }
                     >
-                      Update
+                      {isSaving ? (
+                        <Upload className="h-3 w-3 mr-1 animate-spin" />
+                      ) : (
+                        <Plus className="h-3 w-3 mr-1" />
+                      )}
+                      {isSaving ? "Saving..." : "Add Tool"}
                     </Button>
-                    <Button
-                      onClick={resetForm}
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 h-7 text-xs"
-                    >
-                      Cancel
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    onClick={handleAddTool}
-                    size="sm"
-                    className="flex-1 h-7 text-xs"
-                    disabled={
-                      !formData.name.trim() || !formData.description.trim()
-                    }
-                  >
-                    <Plus className="h-3 w-3 mr-1" />
-                    Add Tool
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Chat Helper Panel */}
-        {showChatHelper && (
-          <div className="w-1/3 border-r border-border p-3">
-            <Card className="h-full flex flex-col">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm">Tool Helper</CardTitle>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowChatHelper(false)}
-                    className="h-5 w-5 p-0"
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="flex-1 flex flex-col p-3 pt-0">
-                {/* Quick Prompts */}
-                <div className="mb-3">
-                  <p className="text-xs text-muted-foreground mb-2">
-                    Quick Help:
-                  </p>
-                  <div className="grid grid-cols-1 gap-1">
-                    {chatHelperPrompts.slice(0, 3).map((prompt) => (
-                      <Button
-                        key={prompt.id}
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setChatInput(prompt.content)}
-                        className="h-6 text-xs justify-start"
-                      >
-                        {prompt.title}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Chat Messages */}
-                <ScrollArea className="flex-1 mb-3">
-                  <div className="space-y-2">
-                    {chatMessages.map((message) => (
-                      <div
-                        key={message.id}
-                        className={`flex ${
-                          message.sender === "user"
-                            ? "justify-end"
-                            : "justify-start"
-                        }`}
-                      >
-                        <div
-                          className={`max-w-[85%] px-2 py-1 rounded text-xs ${
-                            message.sender === "user"
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-muted"
-                          }`}
-                        >
-                          <div className="whitespace-pre-wrap">
-                            {message.content}
-                          </div>
-                          {message.sender === "assistant" && (
-                            <Button
-                              onClick={() =>
-                                applyChatSuggestion(message.content)
-                              }
-                              variant="ghost"
-                              size="sm"
-                              className="h-4 px-1 mt-1 text-xs"
-                            >
-                              Apply
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-
-                    {isTyping && (
-                      <div className="flex justify-start">
-                        <div className="bg-muted px-2 py-1 rounded">
-                          <div className="flex space-x-1">
-                            <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"></div>
-                            <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce delay-75"></div>
-                            <div className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce delay-150"></div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </ScrollArea>
-
-                {/* Chat Input */}
-                <div className="flex space-x-1">
-                  <Input
-                    placeholder="Ask about tool creation..."
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleChatSend();
-                      }
-                    }}
-                    className="flex-1 h-6 text-xs"
-                  />
-                  <Button
-                    onClick={handleChatSend}
-                    disabled={!chatInput.trim() || isTyping}
-                    size="sm"
-                    className="h-6 w-6 p-0"
-                  >
-                    <Send className="h-2 w-2" />
-                  </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
           </div>
-        )}
 
-        {/* Tools List */}
-        <div className="flex-1 p-3">
-          <ScrollArea className="h-full">
-            <div className="space-y-2">
-              {customTools.length === 0 ? (
-                <div className="text-center text-muted-foreground text-sm py-8">
-                  No custom tools yet. Add one to get started.
+          {/* Tools List */}
+          <div className="flex-1 p-3">
+            {/* Search and Filter Bar */}
+            <div className="mb-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                  <Input
+                    placeholder="Search tools..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-7 h-7 text-xs"
+                  />
                 </div>
-              ) : (
-                customTools.map((tool) => {
-                  const CategoryIcon = toolCategories[tool.category].icon;
-                  return (
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-24 h-7 text-xs">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Stats */}
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <span>{filteredTools.length} tools</span>
+                <span>•</span>
+                <span>
+                  {filteredTools.filter((t) => t.isActive).length} active
+                </span>
+                <span>•</span>
+                <span>
+                  {filteredTools.filter((t) => !t.isActive).length} inactive
+                </span>
+              </div>
+            </div>
+
+            <ScrollArea className="h-full">
+              <div className="space-y-2">
+                {filteredTools.length === 0 ? (
+                  <div className="text-center text-muted-foreground text-sm py-8">
+                    {customTools.length === 0
+                      ? "No tools yet. Add one to get started."
+                      : "No tools match your search criteria."}
+                  </div>
+                ) : (
+                  filteredTools.map((tool) => (
                     <Card
                       key={tool.id}
-                      className={!tool.isActive ? "opacity-50" : ""}
+                      className={`transition-opacity ${!tool.isActive ? "opacity-50" : ""}`}
                     >
                       <CardContent className="p-3">
                         <div className="flex items-start justify-between">
                           <div className="flex-1 space-y-2">
                             <div className="flex items-center space-x-2">
-                              <CategoryIcon className="h-4 w-4 text-muted-foreground" />
+                              <Wrench className="h-4 w-4 text-muted-foreground" />
                               <h3 className="text-sm font-medium">
                                 {tool.name}
                               </h3>
@@ -755,14 +738,6 @@ export default function ToolsPage() {
                               {tool.description}
                             </p>
                             <div className="text-xs text-muted-foreground space-y-1">
-                              <div>
-                                Category: {toolCategories[tool.category].name}
-                              </div>
-                              {tool.endpoint && (
-                                <div className="font-mono">
-                                  Endpoint: {tool.endpoint}
-                                </div>
-                              )}
                               {tool.parameters.length > 0 && (
                                 <div>Parameters: {tool.parameters.length}</div>
                               )}
@@ -771,20 +746,44 @@ export default function ToolsPage() {
                               </div>
                             </div>
                           </div>
-                          <div className="flex space-x-1 ml-2">
+                          <div className="flex flex-col space-y-1 ml-2">
+                            <div className="flex space-x-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => downloadPythonCode(tool)}
+                                className="h-6 w-6 p-0"
+                                title="Download Python code"
+                              >
+                                <Download className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => exportTool(tool)}
+                                className="h-6 w-6 p-0"
+                                title="Export configuration"
+                              >
+                                <Download className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleEditTool(tool)}
+                                className="h-6 w-6 p-0"
+                                title="Edit tool"
+                              >
+                                <Edit className="h-3 w-3" />
+                              </Button>
+                            </div>
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleEditTool(tool)}
-                              className="h-6 w-6 p-0"
-                            >
-                              <Edit className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDeleteTool(tool.id)}
-                              className="h-6 w-6 p-0"
+                              onClick={() =>
+                                handleDeleteTool(tool.id, tool.name)
+                              }
+                              className="h-6 w-6 p-0 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                              title="Delete tool"
                             >
                               <Trash2 className="h-3 w-3" />
                             </Button>
@@ -792,13 +791,13 @@ export default function ToolsPage() {
                         </div>
                       </CardContent>
                     </Card>
-                  );
-                })
-              )}
-            </div>
-          </ScrollArea>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

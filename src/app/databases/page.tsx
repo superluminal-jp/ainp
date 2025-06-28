@@ -5,9 +5,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { useState, useEffect, useRef } from "react";
+import { useSimpleHeader } from "@/components/use-page-header";
+import { AppHeader } from "@/components/app-header";
 import {
   ArrowLeft,
   Plus,
@@ -17,38 +28,53 @@ import {
   Upload,
   File,
   X,
-  FolderOpen,
-  Eye,
   Download,
+  Eye,
+  CheckCircle,
+  AlertCircle,
+  Folder,
+  FolderOpen,
+  ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import Link from "next/link";
+import { uploadData, downloadData, remove, list } from "aws-amplify/storage";
+import type { Schema } from "../../../amplify/data/resource";
+import { generateClient } from "aws-amplify/data";
 
-// Metadata not needed for client components
-
-interface CustomDatabase {
-  id: string;
-  name: string;
-  description: string;
-  isActive: boolean;
-  uploadedFiles?: UploadedFile[];
-}
+const client = generateClient<Schema>();
 
 interface UploadedFile {
   id: string;
   name: string;
   size: number;
   type: string;
-  content?: string;
+  fileKey: string;
   uploadDate: Date;
+}
+
+interface FolderStructure {
+  name: string;
+  path: string;
+  files: StorageFile[];
+  folders: FolderStructure[];
+  isExpanded: boolean;
+}
+
+interface StorageFile {
+  key: string;
+  lastModified?: Date;
+  size?: number;
+  name: string;
 }
 
 export default function DatabasesPage() {
   const [isDark, setIsDark] = useState(true);
-  const [customDatabases, setCustomDatabases] = useState<CustomDatabase[]>([]);
+  const [databases, setDatabases] = useState<Schema["databases"]["type"][]>([]);
   const [isEditing, setIsEditing] = useState(false);
-  const [editingDatabase, setEditingDatabase] = useState<CustomDatabase | null>(
-    null
-  );
+  const [editingDatabase, setEditingDatabase] = useState<
+    Schema["databases"]["type"] | null
+  >(null);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -56,33 +82,66 @@ export default function DatabasesPage() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [viewingFile, setViewingFile] = useState<UploadedFile | null>(null);
+  const [fileContent, setFileContent] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [folderStructure, setFolderStructure] =
+    useState<FolderStructure | null>(null);
+  const [showFolderView, setShowFolderView] = useState(false);
+  const [selectedDatabase, setSelectedDatabase] = useState<
+    Schema["databases"]["type"] | null
+  >(null);
+  const [databaseFiles, setDatabaseFiles] = useState<
+    Schema["databaseFiles"]["type"][]
+  >([]);
+  const [showDatabaseView, setShowDatabaseView] = useState(false);
+  const [addingFilesToDatabase, setAddingFilesToDatabase] = useState(false);
+  const [databaseUploadFiles, setDatabaseUploadFiles] = useState<
+    UploadedFile[]
+  >([]);
+  const databaseFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const darkClass = document.documentElement.classList.contains("dark");
     setIsDark(darkClass);
-
-    // Load custom databases from localStorage
-    const saved = localStorage.getItem("customDatabases");
-    if (saved) {
-      const parsedDatabases = JSON.parse(saved).map(
-        (
-          db: CustomDatabase & {
-            uploadedFiles?: Array<UploadedFile & { uploadDate: string }>;
-          }
-        ) => ({
-          ...db,
-          uploadedFiles: db.uploadedFiles?.map(
-            (file: UploadedFile & { uploadDate: string }) => ({
-              ...file,
-              uploadDate: new Date(file.uploadDate),
-            })
-          ),
-        })
-      );
-      setCustomDatabases(parsedDatabases);
-    }
+    fetchDatabases();
   }, []);
+
+  const fetchDatabases = async () => {
+    try {
+      const { data } = await client.models.databases.list();
+      setDatabases(data || []);
+    } catch (error) {
+      console.error("Error fetching databases:", error);
+    }
+  };
+
+  const fetchDatabaseFiles = async (databaseId: string) => {
+    try {
+      setLoading(true);
+      const { data } = await client.models.databaseFiles.list({
+        filter: { databaseId: { eq: databaseId } },
+      });
+      setDatabaseFiles(data || []);
+    } catch (error) {
+      console.error("Error fetching database files:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDatabaseClick = async (database: Schema["databases"]["type"]) => {
+    setSelectedDatabase(database);
+    setShowDatabaseView(true);
+    setShowFolderView(false);
+    await fetchDatabaseFiles(database.id);
+  };
+
+  const goBackToList = () => {
+    setSelectedDatabase(null);
+    setShowDatabaseView(false);
+    setDatabaseFiles([]);
+  };
 
   const toggleTheme = (checked: boolean) => {
     setIsDark(checked);
@@ -93,11 +152,6 @@ export default function DatabasesPage() {
     }
   };
 
-  const saveDatabases = (databases: CustomDatabase[]) => {
-    setCustomDatabases(databases);
-    localStorage.setItem("customDatabases", JSON.stringify(databases));
-  };
-
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return "0 B";
     const k = 1024;
@@ -106,45 +160,227 @@ export default function DatabasesPage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
   };
 
+  const fetchFolderStructure = async () => {
+    try {
+      setLoading(true);
+      const result = await list({
+        path: "databases/",
+        options: {
+          listAll: true,
+        },
+      });
+
+      const files = result.items || [];
+      const structure = buildFolderStructure(files);
+      setFolderStructure(structure);
+    } catch (error) {
+      console.error("Error fetching folder structure:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const buildFolderStructure = (files: any[]): FolderStructure => {
+    const root: FolderStructure = {
+      name: "databases",
+      path: "databases/",
+      files: [],
+      folders: [],
+      isExpanded: true,
+    };
+
+    const folderMap = new Map<string, FolderStructure>();
+    folderMap.set("databases/", root);
+
+    files.forEach((file) => {
+      const parts = file.path.split("/").filter(Boolean);
+      let currentPath = "";
+
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        const parentPath = currentPath;
+        currentPath += part + "/";
+
+        if (i === parts.length - 1 && !file.path.endsWith("/")) {
+          // This is a file, not a folder
+          const parentFolder = folderMap.get(parentPath + "/") || root;
+          parentFolder.files.push({
+            key: file.path,
+            lastModified: file.lastModified,
+            size: file.size,
+            name: part,
+          });
+        } else {
+          // This is a folder
+          if (!folderMap.has(currentPath)) {
+            const newFolder: FolderStructure = {
+              name: part,
+              path: currentPath,
+              files: [],
+              folders: [],
+              isExpanded: false,
+            };
+
+            const parentFolder = folderMap.get(parentPath + "/") || root;
+            parentFolder.folders.push(newFolder);
+            folderMap.set(currentPath, newFolder);
+          }
+        }
+      }
+    });
+
+    return root;
+  };
+
+  const toggleFolder = (path: string) => {
+    const updateFolderExpansion = (
+      folder: FolderStructure
+    ): FolderStructure => {
+      if (folder.path === path) {
+        return { ...folder, isExpanded: !folder.isExpanded };
+      }
+      return {
+        ...folder,
+        folders: folder.folders.map(updateFolderExpansion),
+      };
+    };
+
+    if (folderStructure) {
+      setFolderStructure(updateFolderExpansion(folderStructure));
+    }
+  };
+
+  const renderFolderStructure = (folder: FolderStructure, depth = 0) => {
+    return (
+      <div key={folder.path} className="space-y-1">
+        {depth > 0 && (
+          <div
+            className="flex items-center space-x-2 p-1 rounded hover:bg-muted/50 cursor-pointer"
+            style={{ paddingLeft: `${depth * 12}px` }}
+            onClick={() => toggleFolder(folder.path)}
+          >
+            {folder.isExpanded ? (
+              <ChevronDown className="h-3 w-3" />
+            ) : (
+              <ChevronRight className="h-3 w-3" />
+            )}
+            {folder.isExpanded ? (
+              <FolderOpen className="h-3 w-3 text-blue-500" />
+            ) : (
+              <Folder className="h-3 w-3 text-blue-500" />
+            )}
+            <span className="text-xs font-medium">{folder.name}</span>
+            <span className="text-xs text-muted-foreground">
+              ({folder.files.length + folder.folders.length})
+            </span>
+          </div>
+        )}
+
+        {folder.isExpanded && (
+          <>
+            {folder.folders.map((subfolder) =>
+              renderFolderStructure(subfolder, depth + 1)
+            )}
+            {folder.files.map((file) => (
+              <div
+                key={file.key}
+                className="group flex items-center justify-between space-x-2 p-1 rounded hover:bg-muted/50 cursor-pointer"
+                style={{ paddingLeft: `${(depth + 1) * 12 + 20}px` }}
+                onClick={() => {
+                  const uploadedFile: UploadedFile = {
+                    id: file.key,
+                    name: file.name,
+                    size: file.size || 0,
+                    type: "unknown",
+                    fileKey: file.key,
+                    uploadDate: file.lastModified || new Date(),
+                  };
+                  viewFile(uploadedFile);
+                }}
+              >
+                <div className="flex items-center space-x-2">
+                  <File className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-xs">{file.name}</span>
+                  {file.size && (
+                    <span className="text-xs text-muted-foreground">
+                      {formatFileSize(file.size)}
+                    </span>
+                  )}
+                </div>
+                <div className="flex space-x-1 opacity-0 group-hover:opacity-100">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const uploadedFile: UploadedFile = {
+                        id: file.key,
+                        name: file.name,
+                        size: file.size || 0,
+                        type: "unknown",
+                        fileKey: file.key,
+                        uploadDate: file.lastModified || new Date(),
+                      };
+                      downloadFile(uploadedFile);
+                    }}
+                    className="h-4 w-4 p-0"
+                    title="Download file"
+                  >
+                    <Download className="h-2 w-2" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    );
+  };
+
   const handleFileUpload = async (files: FileList) => {
+    setLoading(true);
     const newFiles: UploadedFile[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const uploadedFile: UploadedFile = {
-        id: Date.now().toString() + i,
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        uploadDate: new Date(),
-      };
+      try {
+        // Upload to shared folder for collaborative databases
+        // You could also use `databases/private/${userId}/` for user-specific files
+        const fileKey = `databases/shared/${Date.now()}-${file.name}`;
 
-      // Read text files content for RAG processing
-      if (
-        file.type.startsWith("text/") ||
-        file.name.endsWith(".txt") ||
-        file.name.endsWith(".md") ||
-        file.name.endsWith(".json") ||
-        file.name.endsWith(".csv")
-      ) {
-        try {
-          const content = await file.text();
-          uploadedFile.content = content;
-        } catch (error) {
-          console.error("Failed to read file content:", error);
-        }
+        await uploadData({
+          path: fileKey,
+          data: file,
+        }).result;
+
+        const uploadedFile: UploadedFile = {
+          id: Date.now().toString() + i,
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          fileKey: fileKey,
+          uploadDate: new Date(),
+        };
+
+        newFiles.push(uploadedFile);
+      } catch (error) {
+        console.error("Failed to upload file:", error);
       }
-
-      newFiles.push(uploadedFile);
     }
 
     setUploadedFiles((prev) => [...prev, ...newFiles]);
+
+    // Refresh folder structure if viewing it
+    if (showFolderView) {
+      fetchFolderStructure();
+    }
+
+    setLoading(false);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragActive(false);
-
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       handleFileUpload(e.dataTransfer.files);
     }
@@ -160,55 +396,110 @@ export default function DatabasesPage() {
     setDragActive(false);
   };
 
-  const removeFile = (fileId: string) => {
-    setUploadedFiles((prev) => prev.filter((f) => f.id !== fileId));
+  const removeFile = async (fileId: string) => {
+    const file = uploadedFiles.find((f) => f.id === fileId);
+    if (file) {
+      try {
+        await remove({ path: file.fileKey });
+        setUploadedFiles((prev) => prev.filter((f) => f.id !== fileId));
+
+        // Refresh folder structure if viewing it
+        if (showFolderView) {
+          fetchFolderStructure();
+        }
+      } catch (error) {
+        console.error("Failed to delete file:", error);
+      }
+    }
   };
 
-  const viewFile = (file: UploadedFile) => {
+  const viewFile = async (file: UploadedFile) => {
     setViewingFile(file);
+    if (
+      file.type.startsWith("text/") ||
+      file.name.endsWith(".txt") ||
+      file.name.endsWith(".md") ||
+      file.name.endsWith(".json") ||
+      file.name.endsWith(".csv")
+    ) {
+      try {
+        const result = await downloadData({ path: file.fileKey }).result;
+        const text = await result.body.text();
+        setFileContent(text);
+      } catch (error) {
+        console.error("Failed to load file content:", error);
+        setFileContent(null);
+      }
+    } else {
+      setFileContent(null);
+    }
   };
 
-  const downloadFile = (file: UploadedFile) => {
-    const blob = new Blob([file.content || ""], { type: file.type });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = file.name;
-    a.click();
-    URL.revokeObjectURL(url);
+  const downloadFile = async (file: UploadedFile) => {
+    try {
+      const result = await downloadData({ path: file.fileKey }).result;
+      const blob = await result.body.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = file.name;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to download file:", error);
+    }
   };
 
-  const handleAddDatabase = () => {
+  const handleAddDatabase = async () => {
     if (!formData.name.trim() || !formData.description.trim()) return;
 
-    const newDatabase: CustomDatabase = {
-      id: Date.now().toString(),
-      name: formData.name.trim(),
-      description: formData.description.trim(),
-      isActive: true,
-      uploadedFiles: uploadedFiles.length > 0 ? uploadedFiles : undefined,
-    };
+    setLoading(true);
+    try {
+      const { data: newDatabase } = await client.models.databases.create({
+        name: formData.name.trim(),
+        description: formData.description.trim(),
+        isActive: true,
+      });
 
-    saveDatabases([...customDatabases, newDatabase]);
-    setFormData({
-      name: "",
-      description: "",
-    });
-    setUploadedFiles([]);
-    setIsEditing(false);
+      if (newDatabase && uploadedFiles.length > 0) {
+        for (const file of uploadedFiles) {
+          await client.models.databaseFiles.create({
+            databaseId: newDatabase.id,
+            fileName: file.name,
+            fileKey: file.fileKey,
+            fileSize: file.size,
+            fileType: file.type,
+            uploadDate: file.uploadDate.toISOString(),
+          });
+        }
+      }
+
+      fetchDatabases();
+      setFormData({ name: "", description: "" });
+      setUploadedFiles([]);
+      setIsEditing(false);
+
+      // If viewing a database, refresh its files
+      if (showDatabaseView && selectedDatabase) {
+        fetchDatabaseFiles(selectedDatabase.id);
+      }
+    } catch (error) {
+      console.error("Error creating database:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleEditDatabase = (database: CustomDatabase) => {
+  const handleEditDatabase = async (database: Schema["databases"]["type"]) => {
     setEditingDatabase(database);
     setFormData({
       name: database.name,
       description: database.description,
     });
-    setUploadedFiles(database.uploadedFiles || []);
     setIsEditing(true);
   };
 
-  const handleUpdateDatabase = () => {
+  const handleUpdateDatabase = async () => {
     if (
       !editingDatabase ||
       !formData.name.trim() ||
@@ -216,176 +507,258 @@ export default function DatabasesPage() {
     )
       return;
 
-    const updated = customDatabases.map((db) =>
-      db.id === editingDatabase.id
-        ? {
-            ...db,
-            name: formData.name.trim(),
-            description: formData.description.trim(),
-            uploadedFiles: uploadedFiles.length > 0 ? uploadedFiles : undefined,
-          }
-        : db
-    );
+    setLoading(true);
+    try {
+      await client.models.databases.update({
+        id: editingDatabase.id,
+        name: formData.name.trim(),
+        description: formData.description.trim(),
+      });
 
-    saveDatabases(updated);
-    setFormData({
-      name: "",
-      description: "",
-    });
-    setUploadedFiles([]);
-    setEditingDatabase(null);
-    setIsEditing(false);
+      fetchDatabases();
+      setFormData({ name: "", description: "" });
+      setUploadedFiles([]);
+      setEditingDatabase(null);
+      setIsEditing(false);
+
+      // If viewing a database, refresh its files
+      if (showDatabaseView && selectedDatabase) {
+        fetchDatabaseFiles(selectedDatabase.id);
+      }
+    } catch (error) {
+      console.error("Error updating database:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleDeleteDatabase = (id: string) => {
-    const filtered = customDatabases.filter((db) => db.id !== id);
-    saveDatabases(filtered);
+  const handleDeleteDatabase = async (id: string) => {
+    setLoading(true);
+    try {
+      // Also delete related files if viewing this database
+      if (showDatabaseView && selectedDatabase?.id === id) {
+        goBackToList();
+      }
+
+      await client.models.databases.delete({ id });
+      fetchDatabases();
+    } catch (error) {
+      console.error("Error deleting database:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const toggleDatabaseActive = (id: string) => {
-    const updated = customDatabases.map((db) =>
-      db.id === id ? { ...db, isActive: !db.isActive } : db
-    );
-    saveDatabases(updated);
+  const toggleDatabaseActive = async (id: string) => {
+    const database = databases.find((db) => db.id === id);
+    if (!database) return;
+
+    try {
+      await client.models.databases.update({
+        id,
+        isActive: !database.isActive,
+      });
+      fetchDatabases();
+    } catch (error) {
+      console.error("Error updating database:", error);
+    }
   };
 
   const cancelEdit = () => {
-    setFormData({
-      name: "",
-      description: "",
-    });
+    setFormData({ name: "", description: "" });
     setUploadedFiles([]);
     setEditingDatabase(null);
     setIsEditing(false);
   };
 
+  const handleDatabaseFileUpload = async (files: FileList) => {
+    if (!selectedDatabase) return;
+
+    setAddingFilesToDatabase(true);
+    const newFiles: UploadedFile[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      try {
+        // Upload to database-specific folder
+        const fileKey = `databases/shared/${selectedDatabase.id}/${Date.now()}-${file.name}`;
+
+        await uploadData({
+          path: fileKey,
+          data: file,
+        }).result;
+
+        const uploadedFile: UploadedFile = {
+          id: Date.now().toString() + i,
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          fileKey: fileKey,
+          uploadDate: new Date(),
+        };
+
+        // Add to database files table
+        await client.models.databaseFiles.create({
+          databaseId: selectedDatabase.id,
+          fileName: file.name,
+          fileKey: fileKey,
+          fileSize: file.size,
+          fileType: file.type,
+          uploadDate: new Date().toISOString(),
+        });
+
+        newFiles.push(uploadedFile);
+      } catch (error) {
+        console.error("Failed to upload file:", error);
+      }
+    }
+
+    setDatabaseUploadFiles([]);
+    // Refresh database files
+    fetchDatabaseFiles(selectedDatabase.id);
+    setAddingFilesToDatabase(false);
+  };
+
+  const handleDatabaseDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleDatabaseFileUpload(e.dataTransfer.files);
+    }
+  };
+
+  const removeDatabaseUploadFile = (fileId: string) => {
+    setDatabaseUploadFiles((prev) => prev.filter((f) => f.id !== fileId));
+  };
+
+  const deleteDatabaseFile = async (fileId: string, fileKey: string) => {
+    if (!selectedDatabase) return;
+
+    try {
+      setLoading(true);
+      // Delete from storage
+      await remove({ path: fileKey });
+
+      // Delete from database
+      await client.models.databaseFiles.delete({ id: fileId });
+
+      // Refresh database files
+      fetchDatabaseFiles(selectedDatabase.id);
+    } catch (error) {
+      console.error("Failed to delete file:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="h-screen bg-background text-foreground flex flex-col">
-      {/* Header */}
-      <header className="border-b border-border shrink-0">
-        <div className="px-3 py-2 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Link href="/">
-              <Button variant="ghost" size="sm" className="h-6 px-2">
-                <ArrowLeft className="h-3 w-3" />
-              </Button>
-            </Link>
-            <h1 className="text-sm font-medium">RAG Databases</h1>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Switch
-              checked={isDark}
-              onCheckedChange={toggleTheme}
-              className="scale-75"
-            />
-          </div>
-        </div>
-      </header>
-
-      <div className="flex-1 flex">
-        {/* Form Panel */}
-        <div className="w-1/3 border-r border-border p-3">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm">
-                {isEditing ? "Edit Database" : "Add New Database"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="space-y-1">
-                <Label htmlFor="name" className="text-xs">
-                  Database Name
-                </Label>
-                <Input
-                  id="name"
-                  placeholder="My Knowledge Base"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
-                  className="h-7 text-xs"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="description" className="text-xs">
-                  Description
-                </Label>
-                <Textarea
-                  id="description"
-                  placeholder="Describe what this database contains..."
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
-                  className="min-h-20 text-xs"
-                />
-              </div>
-
-              {/* File Upload Section */}
-              <div className="space-y-2">
-                <Label className="text-xs">Upload Files for RAG</Label>
-                <div
-                  className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
-                    dragActive
-                      ? "border-primary bg-primary/10"
-                      : "border-border hover:border-primary/50"
-                  }`}
-                  onDrop={handleDrop}
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                >
-                  <Upload className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
-                  <p className="text-xs text-muted-foreground mb-2">
-                    Drag & drop files here, or click to select
-                  </p>
-                  <Button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    variant="outline"
-                    size="sm"
-                    className="h-6 text-xs"
-                  >
-                    Choose Files
-                  </Button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept=".txt,.md,.csv,.json,.pdf,.doc,.docx"
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files.length > 0) {
-                        handleFileUpload(e.target.files);
-                      }
-                    }}
-                    className="hidden"
+    <>
+      <AppHeader />
+      <div className="h-screen bg-background text-foreground flex flex-col">
+        <div className="flex-1 flex">
+          {/* Form Panel */}
+          <div className="w-1/3 border-r border-border p-3">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm">
+                  {isEditing ? "Edit Database" : "Add New Database"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="space-y-1">
+                  <Label htmlFor="name" className="text-xs">
+                    Database Name
+                  </Label>
+                  <Input
+                    id="name"
+                    placeholder="My Knowledge Base"
+                    value={formData.name}
+                    onChange={(e) =>
+                      setFormData({ ...formData, name: e.target.value })
+                    }
+                    className="h-7 text-xs"
                   />
                 </div>
 
-                {/* Uploaded Files List */}
-                {uploadedFiles.length > 0 && (
-                  <div className="space-y-1 max-h-32 overflow-y-auto">
-                    <p className="text-xs text-muted-foreground">
-                      Uploaded Files ({uploadedFiles.length}):
+                <div className="space-y-1">
+                  <Label htmlFor="description" className="text-xs">
+                    Description
+                  </Label>
+                  <Textarea
+                    id="description"
+                    placeholder="Describe what this database contains..."
+                    value={formData.description}
+                    onChange={(e) =>
+                      setFormData({ ...formData, description: e.target.value })
+                    }
+                    className="min-h-20 text-xs"
+                  />
+                </div>
+
+                {/* File Upload Section */}
+                <div className="space-y-2">
+                  <Label className="text-xs">Upload Files for RAG</Label>
+                  <div
+                    className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
+                      dragActive
+                        ? "border-primary bg-primary/10"
+                        : "border-border hover:border-primary/50"
+                    }`}
+                    onDrop={handleDrop}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                  >
+                    <Upload className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Drag & drop files here, or click to select
                     </p>
-                    {uploadedFiles.map((file) => (
-                      <div
-                        key={file.id}
-                        className="flex items-center justify-between bg-muted rounded px-2 py-1"
-                      >
-                        <div className="flex items-center space-x-2 flex-1 min-w-0">
-                          <File className="h-3 w-3 text-muted-foreground shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-medium truncate">
-                              {file.name}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatFileSize(file.size)}
-                            </p>
+                    <Button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      variant="outline"
+                      size="sm"
+                      className="h-6 text-xs"
+                      disabled={loading}
+                    >
+                      Choose Files
+                    </Button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept=".txt,.md,.csv,.json,.pdf,.doc,.docx"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                          handleFileUpload(e.target.files);
+                        }
+                      }}
+                      className="hidden"
+                    />
+                  </div>
+
+                  {/* Uploaded Files List */}
+                  {uploadedFiles.length > 0 && (
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      <p className="text-xs text-muted-foreground">
+                        Uploaded Files ({uploadedFiles.length}):
+                      </p>
+                      {uploadedFiles.map((file) => (
+                        <div
+                          key={file.id}
+                          className="flex items-center justify-between bg-muted rounded px-2 py-1"
+                        >
+                          <div className="flex items-center space-x-2 flex-1 min-w-0">
+                            <File className="h-3 w-3 text-muted-foreground shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-medium truncate">
+                                {file.name}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {formatFileSize(file.size)}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex space-x-1 shrink-0">
-                          {file.content && (
+                          <div className="flex space-x-1 shrink-0">
                             <Button
                               type="button"
                               variant="ghost"
@@ -396,8 +769,6 @@ export default function DatabasesPage() {
                             >
                               <Eye className="h-2 w-2" />
                             </Button>
-                          )}
-                          {file.content && (
                             <Button
                               type="button"
                               variant="ghost"
@@ -408,195 +779,458 @@ export default function DatabasesPage() {
                             >
                               <Download className="h-2 w-2" />
                             </Button>
-                          )}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeFile(file.id)}
-                            className="h-4 w-4 p-0"
-                            title="Remove file"
-                          >
-                            <X className="h-2 w-2" />
-                          </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeFile(file.id)}
+                              className="h-4 w-4 p-0"
+                              title="Remove file"
+                            >
+                              <X className="h-2 w-2" />
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-              <div className="flex gap-2">
-                {isEditing ? (
-                  <>
+                <div className="flex gap-2">
+                  {isEditing ? (
+                    <>
+                      <Button
+                        onClick={handleUpdateDatabase}
+                        size="sm"
+                        className="flex-1 h-7 text-xs"
+                        disabled={
+                          !formData.name.trim() ||
+                          !formData.description.trim() ||
+                          loading
+                        }
+                      >
+                        {loading ? "Updating..." : "Update"}
+                      </Button>
+                      <Button
+                        onClick={cancelEdit}
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 h-7 text-xs"
+                        disabled={loading}
+                      >
+                        Cancel
+                      </Button>
+                    </>
+                  ) : (
                     <Button
-                      onClick={handleUpdateDatabase}
+                      onClick={handleAddDatabase}
                       size="sm"
                       className="flex-1 h-7 text-xs"
                       disabled={
-                        !formData.name.trim() || !formData.description.trim()
+                        !formData.name.trim() ||
+                        !formData.description.trim() ||
+                        loading
                       }
                     >
-                      Update
+                      <Plus className="h-3 w-3 mr-1" />
+                      {loading ? "Creating..." : "Add Database"}
                     </Button>
-                    <Button
-                      onClick={cancelEdit}
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 h-7 text-xs"
-                    >
-                      Cancel
-                    </Button>
-                  </>
-                ) : (
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Databases List */}
+          <div className="flex-1 p-3">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center space-x-2">
+                {showDatabaseView && selectedDatabase && (
                   <Button
-                    onClick={handleAddDatabase}
+                    variant="ghost"
                     size="sm"
-                    className="flex-1 h-7 text-xs"
-                    disabled={
-                      !formData.name.trim() || !formData.description.trim()
-                    }
+                    onClick={goBackToList}
+                    className="h-7 text-xs"
                   >
-                    <Plus className="h-3 w-3 mr-1" />
-                    Add Database
+                    <ArrowLeft className="h-3 w-3 mr-1" />
+                    Back
                   </Button>
                 )}
+                <h2 className="text-sm font-semibold">
+                  {showDatabaseView && selectedDatabase
+                    ? `${selectedDatabase.name} - Files`
+                    : "Databases"}
+                </h2>
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
 
-        {/* Databases List */}
-        <div className="flex-1 p-3">
-          <ScrollArea className="h-full">
-            <div className="space-y-2">
-              {customDatabases.length === 0 ? (
-                <div className="text-center text-muted-foreground text-sm py-8">
-                  No custom databases yet. Add one to get started.
-                </div>
-              ) : (
-                customDatabases.map((database) => {
-                  return (
-                    <Card
-                      key={database.id}
-                      className={!database.isActive ? "opacity-50" : ""}
-                    >
+            <ScrollArea className="h-full">
+              {showDatabaseView && selectedDatabase ? (
+                /* Database Files View */
+                <div className="space-y-2">
+                  {selectedDatabase && (
+                    <Card>
                       <CardContent className="p-3">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1 space-y-2">
-                            <div className="flex items-center space-x-2">
-                              <Database className="h-4 w-4 text-muted-foreground" />
-                              <h3 className="text-sm font-medium">
-                                {database.name}
-                              </h3>
-                              <Switch
-                                checked={database.isActive}
-                                onCheckedChange={() =>
-                                  toggleDatabaseActive(database.id)
-                                }
-                                className="scale-75"
-                              />
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                              {database.description}
-                            </p>
-                            <div className="text-xs text-muted-foreground space-y-1">
-                              {database.uploadedFiles &&
-                                database.uploadedFiles.length > 0 && (
-                                  <div className="space-y-1">
-                                    <div className="flex items-center space-x-1">
-                                      <FolderOpen className="h-3 w-3" />
-                                      <span>
-                                        Files: {database.uploadedFiles.length}
-                                      </span>
-                                    </div>
-                                    <div className="max-h-20 overflow-y-auto space-y-1">
-                                      {database.uploadedFiles
-                                        .slice(0, 3)
-                                        .map((file) => (
-                                          <div
-                                            key={file.id}
-                                            className="flex items-center justify-between text-xs bg-muted/50 rounded px-1 py-0.5"
-                                          >
-                                            <div className="flex items-center space-x-1 flex-1 min-w-0">
-                                              <File className="h-2.5 w-2.5 shrink-0" />
-                                              <span className="truncate">
-                                                {file.name}
-                                              </span>
-                                            </div>
-                                            {file.content && (
-                                              <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  viewFile(file);
-                                                }}
-                                                className="h-3 w-3 p-0 shrink-0"
-                                                title="View file"
-                                              >
-                                                <Eye className="h-2 w-2" />
-                                              </Button>
-                                            )}
-                                          </div>
-                                        ))}
-                                      {database.uploadedFiles.length > 3 && (
-                                        <div className="text-xs text-muted-foreground px-1">
-                                          +{database.uploadedFiles.length - 3}{" "}
-                                          more files
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-                            </div>
+                        <div className="space-y-2">
+                          <div className="flex items-center space-x-2">
+                            <Database className="h-4 w-4 text-blue-500" />
+                            <span className="text-sm font-medium">
+                              {selectedDatabase.name}
+                            </span>
+                            <Badge variant="secondary" className="text-xs">
+                              {databaseFiles.length} files
+                            </Badge>
                           </div>
-                          <div className="flex space-x-1 ml-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEditDatabase(database)}
-                              className="h-6 w-6 p-0"
-                            >
-                              <Edit className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDeleteDatabase(database.id)}
-                              className="h-6 w-6 p-0"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {selectedDatabase.description}
+                          </p>
                         </div>
                       </CardContent>
                     </Card>
-                  );
-                })
-              )}
-            </div>
-          </ScrollArea>
-        </div>
-      </div>
+                  )}
 
-      {/* File Viewer Modal */}
-      {viewingFile && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-background border border-border rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-3 border-b border-border">
-              <div className="flex items-center space-x-2">
-                <File className="h-4 w-4 text-muted-foreground" />
-                <div>
-                  <h3 className="text-sm font-medium">{viewingFile.name}</h3>
-                  <p className="text-xs text-muted-foreground">
-                    {formatFileSize(viewingFile.size)} • {viewingFile.type}
-                  </p>
+                  {/* File Upload Section for Database */}
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">
+                        Add Files to Database
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div
+                        className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
+                          dragActive
+                            ? "border-primary bg-primary/10"
+                            : "border-border hover:border-primary/50"
+                        }`}
+                        onDrop={handleDatabaseDrop}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                      >
+                        <Upload className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
+                        <p className="text-xs text-muted-foreground mb-2">
+                          Drag & drop files here, or click to select
+                        </p>
+                        <Button
+                          type="button"
+                          onClick={() => databaseFileInputRef.current?.click()}
+                          variant="outline"
+                          size="sm"
+                          className="h-6 text-xs"
+                          disabled={addingFilesToDatabase}
+                        >
+                          <Plus className="h-3 w-3 mr-1" />
+                          Add Files
+                        </Button>
+                        <input
+                          ref={databaseFileInputRef}
+                          type="file"
+                          multiple
+                          accept=".txt,.md,.csv,.json,.pdf,.doc,.docx"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files.length > 0) {
+                              handleDatabaseFileUpload(e.target.files);
+                            }
+                          }}
+                          className="hidden"
+                        />
+                      </div>
+
+                      {/* Upload Progress */}
+                      {addingFilesToDatabase && (
+                        <div className="space-y-1">
+                          <div className="flex items-center space-x-2">
+                            <Progress
+                              value={undefined}
+                              className="flex-1 h-2"
+                            />
+                            <span className="text-xs text-muted-foreground">
+                              Uploading...
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Temporary upload files list */}
+                      {databaseUploadFiles.length > 0 && (
+                        <div className="space-y-1 max-h-32 overflow-y-auto">
+                          <p className="text-xs text-muted-foreground">
+                            Files to Upload ({databaseUploadFiles.length}):
+                          </p>
+                          {databaseUploadFiles.map((file) => (
+                            <div
+                              key={file.id}
+                              className="flex items-center justify-between bg-muted rounded px-2 py-1"
+                            >
+                              <div className="flex items-center space-x-2 flex-1 min-w-0">
+                                <File className="h-3 w-3 text-muted-foreground shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-medium truncate">
+                                    {file.name}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {formatFileSize(file.size)}
+                                  </p>
+                                </div>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  removeDatabaseUploadFile(file.id)
+                                }
+                                className="h-4 w-4 p-0"
+                                title="Remove file"
+                              >
+                                <X className="h-2 w-2" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {loading ? (
+                    <div className="text-center text-muted-foreground text-sm py-8">
+                      Loading files...
+                    </div>
+                  ) : databaseFiles.length === 0 ? (
+                    <div className="text-center text-muted-foreground text-sm py-8">
+                      No files found in this database.
+                    </div>
+                  ) : (
+                    databaseFiles.map((file) => (
+                      <Card
+                        key={file.id}
+                        className="hover:bg-muted/50 cursor-pointer"
+                      >
+                        <CardContent
+                          className="p-3"
+                          onClick={async () => {
+                            const uploadedFile: UploadedFile = {
+                              id: file.id,
+                              name: file.fileName,
+                              size: file.fileSize || 0,
+                              type: file.fileType || "unknown",
+                              fileKey: file.fileKey,
+                              uploadDate: new Date(
+                                file.uploadDate || Date.now()
+                              ),
+                            };
+                            await viewFile(uploadedFile);
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-2">
+                              <File className="h-4 w-4 text-muted-foreground" />
+                              <div>
+                                <h3 className="text-sm font-medium">
+                                  {file.fileName}
+                                </h3>
+                                <p className="text-xs text-muted-foreground">
+                                  {file.fileSize &&
+                                    formatFileSize(file.fileSize)}{" "}
+                                  • {file.fileType} •{" "}
+                                  {file.uploadDate &&
+                                    new Date(
+                                      file.uploadDate
+                                    ).toLocaleDateString()}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex space-x-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  const uploadedFile: UploadedFile = {
+                                    id: file.id,
+                                    name: file.fileName,
+                                    size: file.fileSize || 0,
+                                    type: file.fileType || "unknown",
+                                    fileKey: file.fileKey,
+                                    uploadDate: new Date(
+                                      file.uploadDate || Date.now()
+                                    ),
+                                  };
+                                  await viewFile(uploadedFile);
+                                }}
+                                className="h-6 w-6 p-0"
+                                title="View file"
+                              >
+                                <Eye className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  const uploadedFile: UploadedFile = {
+                                    id: file.id,
+                                    name: file.fileName,
+                                    size: file.fileSize || 0,
+                                    type: file.fileType || "unknown",
+                                    fileKey: file.fileKey,
+                                    uploadDate: new Date(
+                                      file.uploadDate || Date.now()
+                                    ),
+                                  };
+                                  await downloadFile(uploadedFile);
+                                }}
+                                className="h-6 w-6 p-0"
+                                title="Download file"
+                              >
+                                <Download className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (
+                                    confirm(
+                                      `Are you sure you want to delete "${file.fileName}"?`
+                                    )
+                                  ) {
+                                    await deleteDatabaseFile(
+                                      file.id,
+                                      file.fileKey
+                                    );
+                                  }
+                                }}
+                                className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                                title="Delete file"
+                                disabled={loading}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))
+                  )}
                 </div>
-              </div>
-              <div className="flex space-x-1">
-                {viewingFile.content && (
+              ) : showFolderView ? (
+                /* Folder Structure View */
+                <div className="space-y-2">
+                  {folderStructure ? (
+                    <Card>
+                      <CardContent className="p-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center space-x-2 mb-2">
+                            <Database className="h-4 w-4 text-blue-500" />
+                            <span className="text-sm font-medium">
+                              Storage Structure
+                            </span>
+                          </div>
+                          {renderFolderStructure(folderStructure)}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : loading ? (
+                    <div className="text-center text-muted-foreground text-sm py-8">
+                      Loading folder structure...
+                    </div>
+                  ) : (
+                    <div className="text-center text-muted-foreground text-sm py-8">
+                      No folder structure available.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Database List View */
+                <div className="space-y-2">
+                  {databases.length === 0 ? (
+                    <div className="text-center text-muted-foreground text-sm py-8">
+                      No databases yet. Add one to get started.
+                    </div>
+                  ) : (
+                    databases.map((database) => (
+                      <Card
+                        key={database.id}
+                        className={`hover:bg-muted/50 cursor-pointer ${
+                          !(database.isActive ?? true) ? "opacity-50" : ""
+                        }`}
+                        onClick={() => handleDatabaseClick(database)}
+                      >
+                        <CardContent className="p-3">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1 space-y-2">
+                              <div className="flex items-center space-x-2">
+                                <Database className="h-4 w-4 text-muted-foreground" />
+                                <h3 className="text-sm font-medium">
+                                  {database.name}
+                                </h3>
+                                <Switch
+                                  checked={database.isActive ?? true}
+                                  onCheckedChange={(checked) => {
+                                    toggleDatabaseActive(database.id);
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="scale-75"
+                                />
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                {database.description}
+                              </p>
+                            </div>
+                            <div className="flex space-x-1 ml-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditDatabase(database);
+                                }}
+                                className="h-6 w-6 p-0"
+                                disabled={loading}
+                              >
+                                <Edit className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteDatabase(database.id);
+                                }}
+                                className="h-6 w-6 p-0"
+                                disabled={loading}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))
+                  )}
+                </div>
+              )}
+            </ScrollArea>
+          </div>
+        </div>
+
+        {/* File Viewer Modal */}
+        {viewingFile && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-background border border-border rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between p-3 border-b border-border">
+                <div className="flex items-center space-x-2">
+                  <File className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <h3 className="text-sm font-medium">{viewingFile.name}</h3>
+                    <p className="text-xs text-muted-foreground">
+                      {formatFileSize(viewingFile.size)} • {viewingFile.type}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex space-x-1">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -606,43 +1240,43 @@ export default function DatabasesPage() {
                   >
                     <Download className="h-3 w-3" />
                   </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setViewingFile(null)}
+                    className="h-6 w-6 p-0"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* Modal Content */}
+              <div className="flex-1 overflow-hidden">
+                {fileContent ? (
+                  <ScrollArea className="h-full">
+                    <div className="p-4">
+                      <pre className="text-xs whitespace-pre-wrap break-words font-mono bg-muted/50 rounded p-3">
+                        {fileContent}
+                      </pre>
+                    </div>
+                  </ScrollArea>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-muted-foreground">
+                    <div className="text-center">
+                      <File className="h-12 w-12 mx-auto mb-2" />
+                      <p className="text-sm">Preview not available</p>
+                      <p className="text-xs">
+                        This file type cannot be previewed
+                      </p>
+                    </div>
+                  </div>
                 )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setViewingFile(null)}
-                  className="h-6 w-6 p-0"
-                >
-                  <X className="h-3 w-3" />
-                </Button>
               </div>
             </div>
-
-            {/* Modal Content */}
-            <div className="flex-1 overflow-hidden">
-              {viewingFile.content ? (
-                <ScrollArea className="h-full">
-                  <div className="p-4">
-                    <pre className="text-xs whitespace-pre-wrap break-words font-mono bg-muted/50 rounded p-3">
-                      {viewingFile.content}
-                    </pre>
-                  </div>
-                </ScrollArea>
-              ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground">
-                  <div className="text-center">
-                    <File className="h-12 w-12 mx-auto mb-2" />
-                    <p className="text-sm">Preview not available</p>
-                    <p className="text-xs">
-                      This file type cannot be previewed
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </>
   );
 }

@@ -1,49 +1,34 @@
-// Shared types and interfaces for the AINP application
-
 export interface Message {
   id: string;
-  content: string;
-  sender: "user" | "assistant";
   timestamp: Date;
+  role: "user" | "assistant";
+  text: string;
+  files?: File[];
 }
 
-export interface CustomPrompt {
+export interface SystemPrompt {
   id: string;
   name: string;
   content: string;
   isActive: boolean;
 }
 
-export interface CustomDatabase {
+export interface Database {
   id: string;
   name: string;
   description: string;
-  type?: "docs" | "code" | "wiki" | "papers" | "custom";
-  connectionString?: string;
   isActive: boolean;
-  vectorDimensions?: number;
-  indexType?: "flat" | "hnsw" | "ivf";
-  uploadedFiles?: UploadedFile[];
 }
 
-export interface UploadedFile {
-  id: string;
-  name: string;
-  size: number;
-  type: string;
-  content?: string;
-  uploadDate: Date;
-}
-
-export interface CustomTool {
+export interface Tool {
   id: string;
   name: string;
   description: string;
-  category: "web" | "code" | "file" | "calc" | "custom";
-  endpoint?: string;
-  parameters?: ToolParameter[];
+  parameters: ToolParameter[];
+  pythonCodeKey: string;
   isActive: boolean;
   createdAt: Date;
+  owner?: string;
 }
 
 export interface ToolParameter {
@@ -59,13 +44,9 @@ export interface Template {
   id: string;
   name: string;
   description: string;
-  category?: string;
-  systemPrompt?: string;
-  databases?: string[];
-  tools?: string[];
-  features?: string[];
-  previewHref?: string;
-  href?: string;
+  systemPrompt: string;
+  databases: string[];
+  tools: string[];
 }
 
 export interface GeneratedPage {
@@ -77,34 +58,3 @@ export interface GeneratedPage {
   createdAt: Date;
   description: string;
 }
-
-export interface ChatMessage {
-  id: string;
-  content: string;
-  sender: "user" | "assistant";
-  timestamp: Date;
-}
-
-// System prompt options
-export type SystemPromptType =
-  | "default"
-  | "helpful"
-  | "creative"
-  | "technical"
-  | "casual"
-  | "professional";
-
-// Database options
-export type DatabaseType =
-  | "none"
-  | "docs"
-  | "code"
-  | "wiki"
-  | "papers"
-  | "custom";
-
-// Tool options
-export type ToolType = "none" | "basic" | "web" | "code" | "file" | "mcp";
-
-// Tool categories
-export type ToolCategory = "web" | "code" | "file" | "calc" | "custom";
