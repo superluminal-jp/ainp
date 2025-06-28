@@ -179,12 +179,6 @@ const navigationItems = [
     description: "Pre-built configurations",
   },
   {
-    title: "Components",
-    url: "/components",
-    icon: Settings,
-    description: "UI components showcase",
-  },
-  {
     title: "Page Generator",
     url: "/generator",
     icon: Sparkles,
