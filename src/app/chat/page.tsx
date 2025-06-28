@@ -16,11 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@/components/ui/hover-card";
+
 import {
   Popover,
   PopoverContent,
@@ -35,6 +31,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useHeader } from "@/components/header-context";
@@ -71,10 +74,10 @@ const client = generateClient<Schema>();
 
 export default function ChatPage() {
   const { setHeaderProps } = useHeader();
-  const [systemPrompt, setSystemPrompt] = useState<string>("");
+  const [systemPrompt, setSystemPrompt] = useState<string>("default");
   const [selectedDatabases, setSelectedDatabases] = useState<string[]>([]);
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
+  const [selectedTemplate, setSelectedTemplate] = useState<string>("none");
   const [systemPrompts, setSystemPrompts] = useState<SystemPrompt[]>([]);
   const [customDatabases, setCustomDatabases] = useState<DatabaseType[]>([]);
   const [customTools, setCustomTools] = useState<Tool[]>([]);
@@ -102,16 +105,17 @@ export default function ChatPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [messageMode, setMessageMode] = useState<"text" | "voice">("text");
   const [typingProgress, setTypingProgress] = useState(0);
-  const [showSettings, setShowSettings] = useState(false);
   const [activeTab, setActiveTab] = useState<"chat" | "history">("chat");
+  const [showConfiguration, setShowConfiguration] = useState(true);
 
   useEffect(() => {
-    // Load system prompts from database
-    const loadSystemPrompts = async () => {
+    // Load all data from Amplify
+    const loadData = async () => {
       try {
-        const { data } = await client.models.systemPrompts.list();
-        if (data) {
-          const prompts: SystemPrompt[] = data.map((prompt) => ({
+        // Load system prompts
+        const { data: promptsData } = await client.models.systemPrompts.list();
+        if (promptsData) {
+          const prompts: SystemPrompt[] = promptsData.map((prompt) => ({
             id: prompt.id,
             name: prompt.name,
             content: prompt.content,
@@ -119,27 +123,94 @@ export default function ChatPage() {
           }));
           setSystemPrompts(prompts);
         }
+
+        // Load databases
+        const { data: databasesData } = await client.models.databases.list();
+        if (databasesData) {
+          const databases: DatabaseType[] = databasesData.map((db) => ({
+            id: db.id,
+            name: db.name,
+            description: db.description,
+            isActive: db.isActive || false,
+          }));
+          setCustomDatabases(databases);
+        }
+
+        // Load tools
+        const { data: toolsData } = await client.models.tools.list();
+        if (toolsData) {
+          const tools: Tool[] = toolsData.map((tool) => ({
+            id: tool.id,
+            name: tool.name,
+            description: tool.description,
+            parameters: Array.isArray(tool.parameters) ? tool.parameters : [],
+            pythonCodeKey: tool.pythonCodeKey,
+            isActive: tool.isActive || false,
+            createdAt: new Date(tool.createdAt),
+            owner: tool.owner || undefined,
+          }));
+          setCustomTools(tools);
+        }
+
+        // Load templates
+        const { data: templatesData } = await client.models.templates.list();
+        if (templatesData) {
+          const templates: Template[] = templatesData.map((template) => ({
+            id: template.id,
+            name: template.name,
+            description: template.description,
+            systemPrompt: template.systemPromptId,
+            databases: Array.isArray(template.databaseIds)
+              ? template.databaseIds
+              : [],
+            tools: Array.isArray(template.toolIds) ? template.toolIds : [],
+          }));
+          setCustomTemplates(templates);
+        }
       } catch (error) {
-        console.error("Error loading system prompts:", error);
+        console.error("Error loading data:", error);
+        toast.error("Failed to load configuration data");
       }
     };
 
-    loadSystemPrompts();
-
-    // Load custom data from localStorage
-    const savedDatabases = localStorage.getItem("customDatabases");
-    if (savedDatabases) setCustomDatabases(JSON.parse(savedDatabases));
-
-    const savedTools = localStorage.getItem("customTools");
-    if (savedTools) setCustomTools(JSON.parse(savedTools));
-
-    const savedTemplates = localStorage.getItem("customTemplates");
-    if (savedTemplates) setCustomTemplates(JSON.parse(savedTemplates));
+    loadData();
   }, []);
+
+  // Apply template configuration when template is selected
+  const applyTemplate = useCallback(
+    (templateId: string) => {
+      const template = customTemplates.find((t) => t.id === templateId);
+      if (template) {
+        setSystemPrompt(template.systemPrompt);
+        setSelectedDatabases(template.databases);
+        setSelectedTools(template.tools);
+        toast.success(`Applied template: ${template.name}`);
+      }
+    },
+    [customTemplates]
+  );
+
+  // Handle template selection
+  const handleTemplateChange = (templateId: string) => {
+    setSelectedTemplate(templateId);
+    if (templateId && templateId !== "none") {
+      applyTemplate(templateId);
+    } else if (templateId === "none") {
+      // Clear template selections
+      setSystemPrompt("default");
+      setSelectedDatabases([]);
+      setSelectedTools([]);
+      toast.info("Template cleared");
+    }
+  };
 
   const clearChat = useCallback(() => {
     let content: string;
-    if (systemPrompt && systemPrompts.length > 0) {
+    if (
+      systemPrompt &&
+      systemPrompt !== "default" &&
+      systemPrompts.length > 0
+    ) {
       const selectedPrompt = systemPrompts.find((p) => p.id === systemPrompt);
       content = selectedPrompt
         ? selectedPrompt.content
@@ -220,7 +291,7 @@ export default function ChatPage() {
 
   // Memoize description to prevent unnecessary re-renders
   const headerDescription = useMemo(() => {
-    if (selectedTemplate) {
+    if (selectedTemplate && selectedTemplate !== "none") {
       const template = customTemplates.find((t) => t.id === selectedTemplate);
       return template
         ? `Using ${template.name} template`
@@ -343,7 +414,7 @@ export default function ChatPage() {
     toast.success("Copied to clipboard!");
   };
 
-  const regenerateResponse = (messageId: string) => {
+  const regenerateResponse = () => {
     toast.info("Regenerating response...");
     // Implementation for regenerating response
   };
@@ -386,7 +457,7 @@ export default function ChatPage() {
                       variant="ghost"
                       size="icon"
                       className="h-6 w-6"
-                      onClick={() => regenerateResponse(message.id)}
+                      onClick={() => regenerateResponse()}
                     >
                       <RefreshCcw className="h-3 w-3" />
                     </Button>
@@ -465,6 +536,187 @@ export default function ChatPage() {
         {/* Bottom Bar with Message Input */}
         <div className="border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 p-4 ">
           <div className="max-w-4xl mx-auto space-y-3">
+            {/* Configuration Toggle */}
+            <div className="flex items-center justify-between">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowConfiguration(!showConfiguration)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                <Settings className="h-3 w-3 mr-1" />
+                {showConfiguration
+                  ? "Hide Configuration"
+                  : "Show Configuration"}
+              </Button>
+            </div>
+
+            {/* Configuration Section */}
+            {showConfiguration && (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 p-3 bg-muted/50 rounded-lg">
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Template
+                  </Label>
+                  <Select
+                    value={selectedTemplate}
+                    onValueChange={handleTemplateChange}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Select template" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {customTemplates.map((template) => (
+                        <SelectItem key={template.id} value={template.id}>
+                          {template.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    System Prompt
+                  </Label>
+                  <Select value={systemPrompt} onValueChange={setSystemPrompt}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Select prompt" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">Default</SelectItem>
+                      {systemPrompts.map((prompt) => (
+                        <SelectItem key={prompt.id} value={prompt.id}>
+                          {prompt.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Databases
+                  </Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="h-8 text-xs justify-start"
+                      >
+                        {selectedDatabases.length > 0
+                          ? `${selectedDatabases.length} selected`
+                          : "Select databases"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-56">
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">
+                          Select Databases
+                        </div>
+                        {customDatabases.map((database) => (
+                          <div
+                            key={database.id}
+                            className="flex items-center space-x-2"
+                          >
+                            <input
+                              type="checkbox"
+                              id={`db-${database.id}`}
+                              checked={selectedDatabases.includes(database.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedDatabases((prev) => [
+                                    ...prev,
+                                    database.id,
+                                  ]);
+                                } else {
+                                  setSelectedDatabases((prev) =>
+                                    prev.filter((id) => id !== database.id)
+                                  );
+                                }
+                              }}
+                              className="rounded border-border"
+                            />
+                            <label
+                              htmlFor={`db-${database.id}`}
+                              className="text-sm"
+                            >
+                              {database.name}
+                            </label>
+                          </div>
+                        ))}
+                        {customDatabases.length === 0 && (
+                          <div className="text-sm text-muted-foreground">
+                            No databases available
+                          </div>
+                        )}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Tools
+                  </Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="h-8 text-xs justify-start"
+                      >
+                        {selectedTools.length > 0
+                          ? `${selectedTools.length} selected`
+                          : "Select tools"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-56">
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">Select Tools</div>
+                        {customTools.map((tool) => (
+                          <div
+                            key={tool.id}
+                            className="flex items-center space-x-2"
+                          >
+                            <input
+                              type="checkbox"
+                              id={`tool-${tool.id}`}
+                              checked={selectedTools.includes(tool.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedTools((prev) => [
+                                    ...prev,
+                                    tool.id,
+                                  ]);
+                                } else {
+                                  setSelectedTools((prev) =>
+                                    prev.filter((id) => id !== tool.id)
+                                  );
+                                }
+                              }}
+                              className="rounded border-border"
+                            />
+                            <label
+                              htmlFor={`tool-${tool.id}`}
+                              className="text-sm"
+                            >
+                              {tool.name}
+                            </label>
+                          </div>
+                        ))}
+                        {customTools.length === 0 && (
+                          <div className="text-sm text-muted-foreground">
+                            No tools available
+                          </div>
+                        )}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+            )}
+
             {attachedFile && (
               <div className="p-3 bg-muted rounded-lg flex items-center justify-between">
                 <div className="flex items-center gap-2">
