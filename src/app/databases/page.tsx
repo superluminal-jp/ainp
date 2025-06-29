@@ -41,9 +41,11 @@ import Link from "next/link";
 import { uploadData, downloadData, remove, list } from "aws-amplify/storage";
 import type { Schema } from "../../../amplify/data/resource";
 import { generateClient } from "aws-amplify/data";
-
 const client = generateClient<Schema>();
 
+/**
+ * Interface for uploaded files with metadata
+ */
 interface UploadedFile {
   id: string;
   name: string;
@@ -53,6 +55,9 @@ interface UploadedFile {
   uploadDate: Date;
 }
 
+/**
+ * Interface for folder structure representation
+ */
 interface FolderStructure {
   name: string;
   path: string;
@@ -61,6 +66,9 @@ interface FolderStructure {
   isExpanded: boolean;
 }
 
+/**
+ * Interface for storage file metadata
+ */
 interface StorageFile {
   key: string;
   lastModified?: Date;
@@ -68,9 +76,43 @@ interface StorageFile {
   name: string;
 }
 
+/**
+ * Interface for error state management
+ */
+interface ErrorState {
+  message: string;
+  type: "error" | "warning" | "info";
+  timestamp: Date;
+}
+
+/**
+ * DatabasesPage Component
+ *
+ * A comprehensive database management interface that provides:
+ * - Database creation, editing, and deletion
+ * - File upload and management with RAG capabilities
+ * - Vector embedding processing
+ * - File preview and download functionality
+ * - Folder structure visualization
+ *
+ * @returns {React.ReactElement} The DatabasesPage component
+ */
 export default function DatabasesPage() {
+  // UI State
   const [isDark, setIsDark] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+
+  // Database State
   const [databases, setDatabases] = useState<Schema["databases"]["type"][]>([]);
+  const [selectedDatabase, setSelectedDatabase] = useState<
+    Schema["databases"]["type"] | null
+  >(null);
+  const [databaseFiles, setDatabaseFiles] = useState<
+    Schema["databaseFiles"]["type"][]
+  >([]);
+
+  // Form State
   const [isEditing, setIsEditing] = useState(false);
   const [editingDatabase, setEditingDatabase] = useState<
     Schema["databases"]["type"] | null
@@ -79,80 +121,162 @@ export default function DatabasesPage() {
     name: "",
     description: "",
   });
+
+  // File State
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
-  const [dragActive, setDragActive] = useState(false);
-  const [viewingFile, setViewingFile] = useState<UploadedFile | null>(null);
-  const [fileContent, setFileContent] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [folderStructure, setFolderStructure] =
-    useState<FolderStructure | null>(null);
-  const [showFolderView, setShowFolderView] = useState(false);
-  const [selectedDatabase, setSelectedDatabase] = useState<
-    Schema["databases"]["type"] | null
-  >(null);
-  const [databaseFiles, setDatabaseFiles] = useState<
-    Schema["databaseFiles"]["type"][]
-  >([]);
-  const [showDatabaseView, setShowDatabaseView] = useState(false);
-  const [addingFilesToDatabase, setAddingFilesToDatabase] = useState(false);
   const [databaseUploadFiles, setDatabaseUploadFiles] = useState<
     UploadedFile[]
   >([]);
+  const [viewingFile, setViewingFile] = useState<UploadedFile | null>(null);
+  const [fileContent, setFileContent] = useState<string | null>(null);
+
+  // View State
+  const [showFolderView, setShowFolderView] = useState(false);
+  const [showDatabaseView, setShowDatabaseView] = useState(false);
+  const [addingFilesToDatabase, setAddingFilesToDatabase] = useState(false);
+  const [folderStructure, setFolderStructure] =
+    useState<FolderStructure | null>(null);
+
+  // Embedding State
+  const [embeddingProgress, setEmbeddingProgress] = useState<{
+    [key: string]: string;
+  }>({});
+
+  // Error State
+  const [errors, setErrors] = useState<ErrorState[]>([]);
+
+  // Refs
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const databaseFileInputRef = useRef<HTMLInputElement>(null);
 
+  /**
+   * Add an error to the error state with automatic cleanup
+   * @param {string} message - Error message to display
+   * @param {'error' | 'warning' | 'info'} type - Type of error
+   */
+  const addError = (
+    message: string,
+    type: "error" | "warning" | "info" = "error"
+  ) => {
+    const error: ErrorState = {
+      message,
+      type,
+      timestamp: new Date(),
+    };
+
+    console.error(`[DatabasesPage] ${type.toUpperCase()}: ${message}`);
+    setErrors((prev) => [...prev, error]);
+
+    // Auto-remove error after 5 seconds
+    setTimeout(() => {
+      setErrors((prev) => prev.filter((e) => e.timestamp !== error.timestamp));
+    }, 5000);
+  };
+
+  /**
+   * Clear all errors from the error state
+   */
+  const clearErrors = () => {
+    setErrors([]);
+  };
+
   useEffect(() => {
+    console.log("[DatabasesPage] Component initialized");
     const darkClass = document.documentElement.classList.contains("dark");
     setIsDark(darkClass);
     fetchDatabases();
   }, []);
 
-  const fetchDatabases = async () => {
+  /**
+   * Fetch all databases from the API
+   * @returns {Promise<void>}
+   */
+  const fetchDatabases = async (): Promise<void> => {
     try {
+      console.log("[DatabasesPage] Fetching databases...");
       const { data } = await client.models.databases.list();
       setDatabases(data || []);
+      console.log(
+        `[DatabasesPage] Successfully fetched ${data?.length || 0} databases`
+      );
     } catch (error) {
-      console.error("Error fetching databases:", error);
+      const errorMessage = "Failed to fetch databases";
+      console.error("[DatabasesPage] Error fetching databases:", error);
+      addError(errorMessage);
     }
   };
 
-  const fetchDatabaseFiles = async (databaseId: string) => {
+  /**
+   * Fetch files for a specific database
+   * @param {string} databaseId - The ID of the database
+   * @returns {Promise<void>}
+   */
+  const fetchDatabaseFiles = async (databaseId: string): Promise<void> => {
+    if (!databaseId) {
+      console.warn(
+        "[DatabasesPage] fetchDatabaseFiles called with empty databaseId"
+      );
+      return;
+    }
+
     try {
+      console.log(`[DatabasesPage] Fetching files for database: ${databaseId}`);
       setLoading(true);
       const { data } = await client.models.databaseFiles.list({
         filter: { databaseId: { eq: databaseId } },
       });
       setDatabaseFiles(data || []);
+      console.log(
+        `[DatabasesPage] Successfully fetched ${data?.length || 0} files for database ${databaseId}`
+      );
     } catch (error) {
-      console.error("Error fetching database files:", error);
+      const errorMessage = "Failed to fetch database files";
+      console.error("[DatabasesPage] Error fetching database files:", error);
+      addError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDatabaseClick = async (database: Schema["databases"]["type"]) => {
-    setSelectedDatabase(database);
-    setShowDatabaseView(true);
-    setShowFolderView(false);
-    await fetchDatabaseFiles(database.id);
-  };
-
-  const goBackToList = () => {
-    setSelectedDatabase(null);
-    setShowDatabaseView(false);
-    setDatabaseFiles([]);
-  };
-
-  const toggleTheme = (checked: boolean) => {
-    setIsDark(checked);
-    if (checked) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
+  /**
+   * Handle database selection and navigate to database view
+   * @param {Schema["databases"]["type"]} database - The selected database
+   * @returns {Promise<void>}
+   */
+  const handleDatabaseClick = async (
+    database: Schema["databases"]["type"]
+  ): Promise<void> => {
+    try {
+      console.log(
+        `[DatabasesPage] Selecting database: ${database.name} (${database.id})`
+      );
+      setSelectedDatabase(database);
+      setShowDatabaseView(true);
+      setShowFolderView(false);
+      await fetchDatabaseFiles(database.id);
+    } catch (error) {
+      console.error("[DatabasesPage] Error in handleDatabaseClick:", error);
+      addError("Failed to load database details");
     }
   };
 
-  const formatFileSize = (bytes: number) => {
+  /**
+   * Navigate back to the database list view
+   */
+  const goBackToList = (): void => {
+    console.log("[DatabasesPage] Navigating back to database list");
+    setSelectedDatabase(null);
+    setShowDatabaseView(false);
+    setDatabaseFiles([]);
+    clearErrors();
+  };
+
+  /**
+   * Format file size from bytes to human-readable format
+   * @param {number} bytes - File size in bytes
+   * @returns {string} Formatted file size
+   */
+  const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return "0 B";
     const k = 1024;
     const sizes = ["B", "KB", "MB", "GB"];
@@ -160,8 +284,13 @@ export default function DatabasesPage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
   };
 
-  const fetchFolderStructure = async () => {
+  /**
+   * Fetch and build folder structure from storage
+   * @returns {Promise<void>}
+   */
+  const fetchFolderStructure = async (): Promise<void> => {
     try {
+      console.log("[DatabasesPage] Fetching folder structure...");
       setLoading(true);
       const result = await list({
         path: "databases/",
@@ -171,16 +300,27 @@ export default function DatabasesPage() {
       });
 
       const files = result.items || [];
+      console.log(
+        `[DatabasesPage] Found ${files.length} items in folder structure`
+      );
       const structure = buildFolderStructure(files);
       setFolderStructure(structure);
     } catch (error) {
-      console.error("Error fetching folder structure:", error);
+      const errorMessage = "Failed to load folder structure";
+      console.error("[DatabasesPage] Error fetching folder structure:", error);
+      addError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
+  /**
+   * Build hierarchical folder structure from flat file list
+   * @param {any[]} files - Array of file objects from storage
+   * @returns {FolderStructure} Hierarchical folder structure
+   */
   const buildFolderStructure = (files: any[]): FolderStructure => {
+    console.log("[DatabasesPage] Building folder structure from files");
     const root: FolderStructure = {
       name: "databases",
       path: "databases/",
@@ -192,47 +332,57 @@ export default function DatabasesPage() {
     const folderMap = new Map<string, FolderStructure>();
     folderMap.set("databases/", root);
 
-    files.forEach((file) => {
-      const parts = file.path.split("/").filter(Boolean);
-      let currentPath = "";
+    try {
+      files.forEach((file) => {
+        const parts = file.path.split("/").filter(Boolean);
+        let currentPath = "";
 
-      for (let i = 0; i < parts.length; i++) {
-        const part = parts[i];
-        const parentPath = currentPath;
-        currentPath += part + "/";
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i];
+          const parentPath = currentPath;
+          currentPath += part + "/";
 
-        if (i === parts.length - 1 && !file.path.endsWith("/")) {
-          // This is a file, not a folder
-          const parentFolder = folderMap.get(parentPath + "/") || root;
-          parentFolder.files.push({
-            key: file.path,
-            lastModified: file.lastModified,
-            size: file.size,
-            name: part,
-          });
-        } else {
-          // This is a folder
-          if (!folderMap.has(currentPath)) {
-            const newFolder: FolderStructure = {
-              name: part,
-              path: currentPath,
-              files: [],
-              folders: [],
-              isExpanded: false,
-            };
-
+          if (i === parts.length - 1 && !file.path.endsWith("/")) {
+            // This is a file, not a folder
             const parentFolder = folderMap.get(parentPath + "/") || root;
-            parentFolder.folders.push(newFolder);
-            folderMap.set(currentPath, newFolder);
+            parentFolder.files.push({
+              key: file.path,
+              lastModified: file.lastModified,
+              size: file.size,
+              name: part,
+            });
+          } else {
+            // This is a folder
+            if (!folderMap.has(currentPath)) {
+              const newFolder: FolderStructure = {
+                name: part,
+                path: currentPath,
+                files: [],
+                folders: [],
+                isExpanded: false,
+              };
+
+              const parentFolder = folderMap.get(parentPath + "/") || root;
+              parentFolder.folders.push(newFolder);
+              folderMap.set(currentPath, newFolder);
+            }
           }
         }
-      }
-    });
+      });
+    } catch (error) {
+      console.error("[DatabasesPage] Error building folder structure:", error);
+      addError("Failed to process folder structure");
+    }
 
     return root;
   };
 
-  const toggleFolder = (path: string) => {
+  /**
+   * Toggle folder expansion state
+   * @param {string} path - Path of the folder to toggle
+   */
+  const toggleFolder = (path: string): void => {
+    console.log(`[DatabasesPage] Toggling folder: ${path}`);
     const updateFolderExpansion = (
       folder: FolderStructure
     ): FolderStructure => {
@@ -250,7 +400,16 @@ export default function DatabasesPage() {
     }
   };
 
-  const renderFolderStructure = (folder: FolderStructure, depth = 0) => {
+  /**
+   * Recursively render folder structure with files
+   * @param {FolderStructure} folder - Folder structure to render
+   * @param {number} depth - Current nesting depth for indentation
+   * @returns {React.ReactElement} Rendered folder structure
+   */
+  const renderFolderStructure = (
+    folder: FolderStructure,
+    depth = 0
+  ): React.ReactElement => {
     return (
       <div key={folder.path} className="space-y-1">
         {depth > 0 && (
@@ -337,15 +496,31 @@ export default function DatabasesPage() {
     );
   };
 
-  const handleFileUpload = async (files: FileList) => {
+  /**
+   * Handle file upload to shared storage
+   * @param {FileList} files - Files to upload
+   * @returns {Promise<void>}
+   */
+  const handleFileUpload = async (files: FileList): Promise<void> => {
+    if (!files || files.length === 0) {
+      console.warn("[DatabasesPage] handleFileUpload called with empty files");
+      return;
+    }
+
+    console.log(`[DatabasesPage] Starting upload of ${files.length} files`);
     setLoading(true);
     const newFiles: UploadedFile[] = [];
+    let successCount = 0;
+    let errorCount = 0;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       try {
+        console.log(
+          `[DatabasesPage] Uploading file: ${file.name} (${formatFileSize(file.size)})`
+        );
+
         // Upload to shared folder for collaborative databases
-        // You could also use `databases/private/${userId}/` for user-specific files
         const fileKey = `databases/shared/${Date.now()}-${file.name}`;
 
         await uploadData({
@@ -363,8 +538,15 @@ export default function DatabasesPage() {
         };
 
         newFiles.push(uploadedFile);
+        successCount++;
+        console.log(`[DatabasesPage] Successfully uploaded: ${file.name}`);
       } catch (error) {
-        console.error("Failed to upload file:", error);
+        errorCount++;
+        console.error(
+          `[DatabasesPage] Failed to upload file ${file.name}:`,
+          error
+        );
+        addError(`Failed to upload ${file.name}`);
       }
     }
 
@@ -375,68 +557,139 @@ export default function DatabasesPage() {
       fetchFolderStructure();
     }
 
+    console.log(
+      `[DatabasesPage] Upload completed: ${successCount} successful, ${errorCount} failed`
+    );
+    // if (successCount > 0) {
+    //   addError(`Successfully uploaded ${successCount} file(s)`, "info");
+    // }
+
     setLoading(false);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  /**
+   * Handle drag and drop file upload
+   * @param {React.DragEvent} e - Drag event
+   */
+  const handleDrop = (e: React.DragEvent): void => {
     e.preventDefault();
     setDragActive(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      console.log(
+        `[DatabasesPage] Files dropped: ${e.dataTransfer.files.length}`
+      );
       handleFileUpload(e.dataTransfer.files);
     }
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
+  /**
+   * Handle drag over event
+   * @param {React.DragEvent} e - Drag event
+   */
+  const handleDragOver = (e: React.DragEvent): void => {
     e.preventDefault();
     setDragActive(true);
   };
 
-  const handleDragLeave = (e: React.DragEvent) => {
+  /**
+   * Handle drag leave event
+   * @param {React.DragEvent} e - Drag event
+   */
+  const handleDragLeave = (e: React.DragEvent): void => {
     e.preventDefault();
     setDragActive(false);
   };
 
-  const removeFile = async (fileId: string) => {
+  /**
+   * Remove file from storage and local state
+   * @param {string} fileId - ID of the file to remove
+   * @returns {Promise<void>}
+   */
+  const removeFile = async (fileId: string): Promise<void> => {
     const file = uploadedFiles.find((f) => f.id === fileId);
-    if (file) {
-      try {
-        await remove({ path: file.fileKey });
-        setUploadedFiles((prev) => prev.filter((f) => f.id !== fileId));
+    if (!file) {
+      console.warn(`[DatabasesPage] File not found for removal: ${fileId}`);
+      return;
+    }
 
-        // Refresh folder structure if viewing it
-        if (showFolderView) {
-          fetchFolderStructure();
-        }
-      } catch (error) {
-        console.error("Failed to delete file:", error);
+    try {
+      console.log(`[DatabasesPage] Removing file: ${file.name}`);
+      await remove({ path: file.fileKey });
+      setUploadedFiles((prev) => prev.filter((f) => f.id !== fileId));
+
+      // Refresh folder structure if viewing it
+      if (showFolderView) {
+        fetchFolderStructure();
       }
+
+      console.log(`[DatabasesPage] Successfully removed file: ${file.name}`);
+    } catch (error) {
+      const errorMessage = `Failed to delete ${file.name}`;
+      console.error("[DatabasesPage] Failed to delete file:", error);
+      addError(errorMessage);
     }
   };
 
-  const viewFile = async (file: UploadedFile) => {
+  /**
+   * View file content in modal
+   * @param {UploadedFile} file - File to view
+   * @returns {Promise<void>}
+   */
+  const viewFile = async (file: UploadedFile): Promise<void> => {
+    if (!file) {
+      console.warn("[DatabasesPage] viewFile called with null file");
+      return;
+    }
+
+    console.log(`[DatabasesPage] Viewing file: ${file.name}`);
     setViewingFile(file);
-    if (
+
+    // Check if file is text-based for preview
+    const isTextFile =
       file.type.startsWith("text/") ||
       file.name.endsWith(".txt") ||
       file.name.endsWith(".md") ||
       file.name.endsWith(".json") ||
-      file.name.endsWith(".csv")
-    ) {
+      file.name.endsWith(".csv");
+
+    if (isTextFile) {
       try {
+        console.log(`[DatabasesPage] Loading text content for: ${file.name}`);
         const result = await downloadData({ path: file.fileKey }).result;
         const text = await result.body.text();
         setFileContent(text);
+        console.log(
+          `[DatabasesPage] Successfully loaded content for: ${file.name}`
+        );
       } catch (error) {
-        console.error("Failed to load file content:", error);
+        console.error(
+          `[DatabasesPage] Failed to load file content for ${file.name}:`,
+          error
+        );
+        addError(`Failed to load content for ${file.name}`);
         setFileContent(null);
       }
     } else {
+      console.log(
+        `[DatabasesPage] File ${file.name} is not text-based, preview not available`
+      );
       setFileContent(null);
     }
   };
 
-  const downloadFile = async (file: UploadedFile) => {
+  /**
+   * Download file from storage
+   * @param {UploadedFile} file - File to download
+   * @returns {Promise<void>}
+   */
+  const downloadFile = async (file: UploadedFile): Promise<void> => {
+    if (!file) {
+      console.warn("[DatabasesPage] downloadFile called with null file");
+      return;
+    }
+
     try {
+      console.log(`[DatabasesPage] Downloading file: ${file.name}`);
       const result = await downloadData({ path: file.fileKey }).result;
       const blob = await result.body.blob();
       const url = URL.createObjectURL(blob);
@@ -445,15 +698,27 @@ export default function DatabasesPage() {
       a.download = file.name;
       a.click();
       URL.revokeObjectURL(url);
+      console.log(`[DatabasesPage] Successfully downloaded: ${file.name}`);
     } catch (error) {
-      console.error("Failed to download file:", error);
+      const errorMessage = `Failed to download ${file.name}`;
+      console.error("[DatabasesPage] Failed to download file:", error);
+      addError(errorMessage);
     }
   };
 
-  const handleAddDatabase = async () => {
-    if (!formData.name.trim() || !formData.description.trim()) return;
+  /**
+   * Add new database with uploaded files
+   * @returns {Promise<void>}
+   */
+  const handleAddDatabase = async (): Promise<void> => {
+    if (!formData.name.trim() || !formData.description.trim()) {
+      addError("Please fill in all required fields", "warning");
+      return;
+    }
 
+    console.log(`[DatabasesPage] Creating new database: ${formData.name}`);
     setLoading(true);
+
     try {
       const { data: newDatabase } = await client.models.databases.create({
         name: formData.name.trim(),
@@ -461,17 +726,57 @@ export default function DatabasesPage() {
         isActive: true,
       });
 
-      if (newDatabase && uploadedFiles.length > 0) {
+      if (!newDatabase) {
+        throw new Error("Failed to create database - no data returned");
+      }
+
+      console.log(
+        `[DatabasesPage] Successfully created database: ${newDatabase.name} (${newDatabase.id})`
+      );
+
+      // Add files to database if any were uploaded
+      if (uploadedFiles.length > 0) {
+        console.log(
+          `[DatabasesPage] Adding ${uploadedFiles.length} files to database`
+        );
+        let fileSuccessCount = 0;
+        let fileErrorCount = 0;
+
         for (const file of uploadedFiles) {
-          await client.models.databaseFiles.create({
-            databaseId: newDatabase.id,
-            fileName: file.name,
-            fileKey: file.fileKey,
-            fileSize: file.size,
-            fileType: file.type,
-            uploadDate: file.uploadDate.toISOString(),
-          });
+          try {
+            const { data: databaseFile } =
+              await client.models.databaseFiles.create({
+                databaseId: newDatabase.id,
+                fileName: file.name,
+                fileKey: file.fileKey,
+                fileSize: file.size,
+                fileType: file.type,
+                uploadDate: file.uploadDate.toISOString(),
+              });
+
+            // Start embedding process automatically for each file
+            if (databaseFile) {
+              embedFile(
+                file.fileKey,
+                file.name,
+                newDatabase.id,
+                databaseFile.id
+              );
+              fileSuccessCount++;
+            }
+          } catch (error) {
+            fileErrorCount++;
+            console.error(
+              `[DatabasesPage] Failed to add file ${file.name} to database:`,
+              error
+            );
+            addError(`Failed to add ${file.name} to database`);
+          }
         }
+
+        console.log(
+          `[DatabasesPage] File addition completed: ${fileSuccessCount} successful, ${fileErrorCount} failed`
+        );
       }
 
       fetchDatabases();
@@ -484,13 +789,22 @@ export default function DatabasesPage() {
         fetchDatabaseFiles(selectedDatabase.id);
       }
     } catch (error) {
-      console.error("Error creating database:", error);
+      const errorMessage = "Failed to create database";
+      console.error("[DatabasesPage] Error creating database:", error);
+      addError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleEditDatabase = async (database: Schema["databases"]["type"]) => {
+  /**
+   * Edit existing database
+   * @param {Schema["databases"]["type"]} database - Database to edit
+   */
+  const handleEditDatabase = async (
+    database: Schema["databases"]["type"]
+  ): Promise<void> => {
+    console.log(`[DatabasesPage] Editing database: ${database.name}`);
     setEditingDatabase(database);
     setFormData({
       name: database.name,
@@ -499,15 +813,23 @@ export default function DatabasesPage() {
     setIsEditing(true);
   };
 
-  const handleUpdateDatabase = async () => {
+  /**
+   * Update existing database
+   * @returns {Promise<void>}
+   */
+  const handleUpdateDatabase = async (): Promise<void> => {
     if (
       !editingDatabase ||
       !formData.name.trim() ||
       !formData.description.trim()
-    )
+    ) {
+      addError("Please fill in all required fields", "warning");
       return;
+    }
 
+    console.log(`[DatabasesPage] Updating database: ${editingDatabase.name}`);
     setLoading(true);
+
     try {
       await client.models.databases.update({
         id: editingDatabase.id,
@@ -515,6 +837,9 @@ export default function DatabasesPage() {
         description: formData.description.trim(),
       });
 
+      console.log(
+        `[DatabasesPage] Successfully updated database: ${formData.name}`
+      );
       fetchDatabases();
       setFormData({ name: "", description: "" });
       setUploadedFiles([]);
@@ -526,90 +851,250 @@ export default function DatabasesPage() {
         fetchDatabaseFiles(selectedDatabase.id);
       }
     } catch (error) {
-      console.error("Error updating database:", error);
+      const errorMessage = "Failed to update database";
+      console.error("[DatabasesPage] Error updating database:", error);
+      addError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDeleteDatabase = async (id: string) => {
+  /**
+   * Delete database and associated files
+   * @param {string} id - Database ID to delete
+   * @returns {Promise<void>}
+   */
+  const handleDeleteDatabase = async (id: string): Promise<void> => {
+    if (!id) {
+      console.warn("[DatabasesPage] handleDeleteDatabase called with empty id");
+      return;
+    }
+
+    const database = databases.find((db) => db.id === id);
+    const databaseName = database?.name || "Unknown";
+
+    if (
+      !confirm(
+        `Are you sure you want to delete "${databaseName}"? This action cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    console.log(`[DatabasesPage] Deleting database: ${databaseName} (${id})`);
     setLoading(true);
+
     try {
-      // Also delete related files if viewing this database
+      // Navigate away if currently viewing this database
       if (showDatabaseView && selectedDatabase?.id === id) {
         goBackToList();
       }
 
       await client.models.databases.delete({ id });
+      console.log(
+        `[DatabasesPage] Successfully deleted database: ${databaseName}`
+      );
       fetchDatabases();
     } catch (error) {
-      console.error("Error deleting database:", error);
+      const errorMessage = `Failed to delete database "${databaseName}"`;
+      console.error("[DatabasesPage] Error deleting database:", error);
+      addError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleDatabaseActive = async (id: string) => {
+  /**
+   * Toggle database active status
+   * @param {string} id - Database ID to toggle
+   * @returns {Promise<void>}
+   */
+  const toggleDatabaseActive = async (id: string): Promise<void> => {
     const database = databases.find((db) => db.id === id);
-    if (!database) return;
+    if (!database) {
+      console.warn(`[DatabasesPage] Database not found for toggle: ${id}`);
+      return;
+    }
+
+    const newStatus = !database.isActive;
+    console.log(
+      `[DatabasesPage] Toggling database ${database.name} active status to: ${newStatus}`
+    );
 
     try {
       await client.models.databases.update({
         id,
-        isActive: !database.isActive,
+        isActive: newStatus,
       });
+
+      console.log(
+        `[DatabasesPage] Successfully toggled database ${database.name} status`
+      );
       fetchDatabases();
     } catch (error) {
-      console.error("Error updating database:", error);
+      const errorMessage = `Failed to update database status`;
+      console.error("[DatabasesPage] Error updating database:", error);
+      addError(errorMessage);
     }
   };
 
-  const cancelEdit = () => {
+  /**
+   * Cancel editing mode and reset form
+   */
+  const cancelEdit = (): void => {
+    console.log("[DatabasesPage] Canceling edit mode");
     setFormData({ name: "", description: "" });
     setUploadedFiles([]);
     setEditingDatabase(null);
     setIsEditing(false);
+    clearErrors();
   };
 
-  const handleDatabaseFileUpload = async (files: FileList) => {
-    if (!selectedDatabase) return;
+  /**
+   * Start embedding process for a file
+   * @param {string} fileKey - Storage key of the file
+   * @param {string} fileName - Name of the file
+   * @param {string} databaseId - ID of the target database
+   * @param {string} databaseFileId - ID of the database file record
+   * @returns {Promise<void>}
+   */
+  const embedFile = async (
+    fileKey: string,
+    fileName: string,
+    databaseId: string,
+    databaseFileId: string
+  ): Promise<void> => {
+    if (!fileKey || !fileName || !databaseId || !databaseFileId) {
+      console.warn("[DatabasesPage] embedFile called with missing parameters");
+      addError("Missing parameters for embedding process", "warning");
+      return;
+    }
 
+    try {
+      console.log(
+        `[DatabasesPage] Starting embedding process for: ${fileName}`
+      );
+      setEmbeddingProgress((prev) => ({
+        ...prev,
+        [fileName]: "Embedding in progress...",
+      }));
+
+      await client.mutations.embedFiles({
+        fileKey: fileKey,
+        fileName: fileName,
+        databaseId: databaseId,
+        databaseFileId: databaseFileId,
+      });
+
+      console.log(
+        `[DatabasesPage] Embedding process completed for: ${fileName}`
+      );
+      setEmbeddingProgress((prev) => ({
+        ...prev,
+        [fileName]: "Embedding completed",
+      }));
+
+      // Remove from progress after 3 seconds
+      setTimeout(() => {
+        setEmbeddingProgress((prev) => {
+          const updated = { ...prev };
+          delete updated[fileName];
+          return updated;
+        });
+      }, 3000);
+    } catch (embedError) {
+      console.error(
+        `[DatabasesPage] Failed to embed file ${fileName}:`,
+        embedError
+      );
+      setEmbeddingProgress((prev) => ({
+        ...prev,
+        [fileName]: "Embedding failed",
+      }));
+
+      addError(`Embedding failed for ${fileName}`);
+
+      // Remove from progress after 5 seconds
+      setTimeout(() => {
+        setEmbeddingProgress((prev) => {
+          const updated = { ...prev };
+          delete updated[fileName];
+          return updated;
+        });
+      }, 5000);
+    }
+  };
+
+  /**
+   * Handle file upload to specific database
+   * @param {FileList} files - Files to upload
+   * @returns {Promise<void>}
+   */
+  const handleDatabaseFileUpload = async (files: FileList): Promise<void> => {
+    if (!selectedDatabase) {
+      console.warn(
+        "[DatabasesPage] handleDatabaseFileUpload called without selected database"
+      );
+      addError("No database selected for file upload", "warning");
+      return;
+    }
+
+    if (!files || files.length === 0) {
+      console.warn(
+        "[DatabasesPage] handleDatabaseFileUpload called with empty files"
+      );
+      return;
+    }
+
+    console.log(
+      `[DatabasesPage] Starting upload of ${files.length} files to database: ${selectedDatabase.name}`
+    );
     setAddingFilesToDatabase(true);
-    const newFiles: UploadedFile[] = [];
+    let successCount = 0;
+    let errorCount = 0;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       try {
+        console.log(`[DatabasesPage] Uploading file to database: ${file.name}`);
+
         // Upload to database-specific folder
-        const fileKey = `databases/shared/${selectedDatabase.id}/${Date.now()}-${file.name}`;
+        const fileKey = `databases/shared/${selectedDatabase.id}/${file.name}`;
 
         await uploadData({
           path: fileKey,
           data: file,
         }).result;
 
-        const uploadedFile: UploadedFile = {
-          id: Date.now().toString() + i,
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          fileKey: fileKey,
-          uploadDate: new Date(),
-        };
-
         // Add to database files table
-        await client.models.databaseFiles.create({
-          databaseId: selectedDatabase.id,
-          fileName: file.name,
-          fileKey: fileKey,
-          fileSize: file.size,
-          fileType: file.type,
-          uploadDate: new Date().toISOString(),
-        });
+        const { data: databaseFile } = await client.models.databaseFiles.create(
+          {
+            databaseId: selectedDatabase.id,
+            fileName: file.name,
+            fileKey: fileKey,
+            fileSize: file.size,
+            fileType: file.type,
+            uploadDate: new Date().toISOString(),
+          }
+        );
 
-        newFiles.push(uploadedFile);
+        // Start embedding process automatically
+        if (databaseFile) {
+          // Run embedding in background without blocking the upload process
+          embedFile(fileKey, file.name, selectedDatabase.id, databaseFile.id);
+        }
+
+        successCount++;
+        console.log(
+          `[DatabasesPage] Successfully uploaded to database: ${file.name}`
+        );
       } catch (error) {
-        console.error("Failed to upload file:", error);
+        errorCount++;
+        console.error(
+          `[DatabasesPage] Failed to upload file ${file.name} to database:`,
+          error
+        );
+        addError(`Failed to upload ${file.name} to database`);
       }
     }
 
@@ -617,35 +1102,86 @@ export default function DatabasesPage() {
     // Refresh database files
     fetchDatabaseFiles(selectedDatabase.id);
     setAddingFilesToDatabase(false);
+
+    console.log(
+      `[DatabasesPage] Database upload completed: ${successCount} successful, ${errorCount} failed`
+    );
+    if (successCount > 0) {
+      // addError(
+      //   `Successfully uploaded ${successCount} file(s) to database`,
+      //   "info"
+      // );
+    }
   };
 
-  const handleDatabaseDrop = (e: React.DragEvent) => {
+  /**
+   * Handle drag and drop for database files
+   * @param {React.DragEvent} e - Drag event
+   */
+  const handleDatabaseDrop = (e: React.DragEvent): void => {
     e.preventDefault();
     setDragActive(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      console.log(
+        `[DatabasesPage] Database files dropped: ${e.dataTransfer.files.length}`
+      );
       handleDatabaseFileUpload(e.dataTransfer.files);
     }
   };
 
-  const removeDatabaseUploadFile = (fileId: string) => {
+  /**
+   * Remove file from database upload queue
+   * @param {string} fileId - ID of file to remove
+   */
+  const removeDatabaseUploadFile = (fileId: string): void => {
+    console.log(`[DatabasesPage] Removing file from upload queue: ${fileId}`);
     setDatabaseUploadFiles((prev) => prev.filter((f) => f.id !== fileId));
   };
 
-  const deleteDatabaseFile = async (fileId: string, fileKey: string) => {
-    if (!selectedDatabase) return;
+  /**
+   * Delete file from database and storage
+   * @param {string} fileId - Database file ID
+   * @param {string} fileKey - Storage file key
+   * @returns {Promise<void>}
+   */
+  const deleteDatabaseFile = async (
+    fileId: string,
+    fileKey: string
+  ): Promise<void> => {
+    if (!selectedDatabase) {
+      console.warn(
+        "[DatabasesPage] deleteDatabaseFile called without selected database"
+      );
+      return;
+    }
+
+    if (!fileId || !fileKey) {
+      console.warn(
+        "[DatabasesPage] deleteDatabaseFile called with missing parameters"
+      );
+      return;
+    }
 
     try {
+      console.log(`[DatabasesPage] Deleting database file: ${fileKey}`);
       setLoading(true);
+
       // Delete from storage
       await remove({ path: fileKey });
 
       // Delete from database
       await client.models.databaseFiles.delete({ id: fileId });
 
+      console.log(
+        `[DatabasesPage] Successfully deleted database file: ${fileKey}`
+      );
+
       // Refresh database files
       fetchDatabaseFiles(selectedDatabase.id);
     } catch (error) {
-      console.error("Failed to delete file:", error);
+      const errorMessage = "Failed to delete file";
+      console.error("[DatabasesPage] Failed to delete file:", error);
+      addError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -655,6 +1191,38 @@ export default function DatabasesPage() {
     <>
       <AppHeader />
       <div className="h-screen bg-background text-foreground flex flex-col">
+        {/* Error Display */}
+        {errors.length > 0 && (
+          <div className="border-b border-border">
+            {errors.slice(-3).map((error, index) => (
+              <div
+                key={error.timestamp.getTime()}
+                className={`px-4 py-2 text-sm ${
+                  error.type === "error"
+                    ? "bg-red-50 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-200 dark:border-red-800"
+                    : error.type === "warning"
+                      ? "bg-yellow-50 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-200 dark:border-yellow-800"
+                      : "bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-200 dark:border-blue-800"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span>{error.message}</span>
+                  <button
+                    onClick={() =>
+                      setErrors((prev) =>
+                        prev.filter((e) => e.timestamp !== error.timestamp)
+                      )
+                    }
+                    className="ml-2 text-current opacity-70 hover:opacity-100"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="flex-1 flex">
           {/* Form Panel */}
           <div className="w-1/3 border-r border-border p-3">
@@ -694,6 +1262,43 @@ export default function DatabasesPage() {
                     className="min-h-20 text-xs"
                   />
                 </div>
+
+                {/* Embedding Progress Section */}
+                {Object.keys(embeddingProgress).length > 0 && (
+                  <div className="space-y-2">
+                    <Label className="text-xs">Embedding Status</Label>
+                    <div className="max-h-24 overflow-y-auto space-y-1 p-2 border rounded-md bg-orange-50 dark:bg-orange-950 border-orange-200 dark:border-orange-800">
+                      {Object.entries(embeddingProgress).map(
+                        ([fileName, status]) => (
+                          <div
+                            key={fileName}
+                            className="flex items-center space-x-2"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium truncate">
+                                {fileName}
+                              </p>
+                            </div>
+                            <div className="flex items-center space-x-1">
+                              {status === "Embedding in progress..." && (
+                                <div className="animate-spin h-2 w-2 border border-orange-500 border-t-transparent rounded-full"></div>
+                              )}
+                              {status === "Embedding completed" && (
+                                <CheckCircle className="h-2 w-2 text-green-500" />
+                              )}
+                              {status === "Embedding failed" && (
+                                <AlertCircle className="h-2 w-2 text-red-500" />
+                              )}
+                              <span className="text-xs text-muted-foreground">
+                                {status}
+                              </span>
+                            </div>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* File Upload Section */}
                 <div className="space-y-2">
@@ -885,6 +1490,48 @@ export default function DatabasesPage() {
                             {selectedDatabase.description}
                           </p>
                         </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Embedding Progress Section */}
+                  {Object.keys(embeddingProgress).length > 0 && (
+                    <Card className="border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center space-x-2">
+                          <Database className="h-4 w-4 text-orange-500" />
+                          <span>Embedding Status</span>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        {Object.entries(embeddingProgress).map(
+                          ([fileName, status]) => (
+                            <div
+                              key={fileName}
+                              className="flex items-center space-x-2"
+                            >
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium truncate">
+                                  {fileName}
+                                </p>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                {status === "Embedding in progress..." && (
+                                  <div className="animate-spin h-3 w-3 border-2 border-orange-500 border-t-transparent rounded-full"></div>
+                                )}
+                                {status === "Embedding completed" && (
+                                  <CheckCircle className="h-3 w-3 text-green-500" />
+                                )}
+                                {status === "Embedding failed" && (
+                                  <AlertCircle className="h-3 w-3 text-red-500" />
+                                )}
+                                <span className="text-xs text-muted-foreground">
+                                  {status}
+                                </span>
+                              </div>
+                            </div>
+                          )
+                        )}
                       </CardContent>
                     </Card>
                   )}
@@ -1084,6 +1731,34 @@ export default function DatabasesPage() {
                                 title="Download file"
                               >
                                 <Download className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (!selectedDatabase) return;
+
+                                  // Use the unified embedFile function
+                                  embedFile(
+                                    file.fileKey,
+                                    file.fileName,
+                                    selectedDatabase.id,
+                                    file.id
+                                  );
+                                }}
+                                className="h-6 w-6 p-0"
+                                title="Embed file into vector database"
+                                disabled={
+                                  loading || !!embeddingProgress[file.fileName]
+                                }
+                              >
+                                {embeddingProgress[file.fileName] ===
+                                "Embedding in progress..." ? (
+                                  <div className="animate-spin h-3 w-3 border border-current border-t-transparent rounded-full"></div>
+                                ) : (
+                                  <Database className="h-3 w-3" />
+                                )}
                               </Button>
                               <Button
                                 variant="ghost"

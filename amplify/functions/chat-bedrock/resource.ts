@@ -2,9 +2,10 @@ import { execSync } from "node:child_process";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineFunction } from "@aws-amplify/backend";
-import { DockerImage, Duration } from "aws-cdk-lib";
+import { DockerImage, Duration, Stack } from "aws-cdk-lib";
 import { Code, Function, Runtime } from "aws-cdk-lib/aws-lambda";
 import { PolicyStatement, Effect } from "aws-cdk-lib/aws-iam";
+import { Bucket } from "aws-cdk-lib/aws-s3";
 
 const functionDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -15,6 +16,9 @@ export const chatBedrockFunction = defineFunction(
       runtime: Runtime.PYTHON_3_12,
       timeout: Duration.seconds(30),
       memorySize: 512,
+      environment: {
+        FAISS_INDEX_PREFIX: "faiss-indexes",
+      },
       code: Code.fromAsset(functionDir, {
         bundling: {
           image: DockerImage.fromRegistry("dummy"),
@@ -46,6 +50,8 @@ export const chatBedrockFunction = defineFunction(
         resources: ["*"],
       })
     );
+
+    // S3 permissions for FAISS indexes will be handled by backend.ts
 
     return fn;
   },

@@ -7,7 +7,7 @@ export function AppHeader() {
   const { title, description, headerActions } = useHeader();
 
   return (
-    <header className="border-b p-4">
+    <header className="border-b p-4 sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <SidebarTrigger />
