@@ -24,6 +24,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Toggle } from "@/components/ui/toggle";
+import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import {
   Tooltip,
@@ -72,6 +73,20 @@ import { generateClient } from "aws-amplify/data";
 
 const client = generateClient<Schema>();
 
+// Available model options
+const AVAILABLE_MODELS = [
+  {
+    id: "apac.anthropic.claude-sonnet-4-20250514-v1:0",
+    name: "Claude 4 Sonnet",
+    description: "Advanced reasoning and analysis capabilities",
+  },
+  {
+    id: "apac.amazon.nova-pro-v1:0",
+    name: "Amazon Nova Pro",
+    description: "High-performance multimodal AI model",
+  },
+];
+
 export default function ChatPage() {
   const { setHeaderProps } = useHeader();
   const { state, isMobile } = useSidebar();
@@ -79,6 +94,10 @@ export default function ChatPage() {
   const [selectedDatabases, setSelectedDatabases] = useState<string[]>([]);
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string>("none");
+  const [selectedModelId, setSelectedModelId] = useState<string>(
+    "apac.anthropic.claude-sonnet-4-20250514-v1:0"
+  );
+  const [forceToolUse, setForceToolUse] = useState<boolean>(false);
   const [systemPrompts, setSystemPrompts] = useState<SystemPrompt[]>([]);
   const [customDatabases, setCustomDatabases] = useState<DatabaseType[]>([]);
   const [customTools, setCustomTools] = useState<Tool[]>([]);
@@ -154,6 +173,7 @@ export default function ChatPage() {
             description: tool.description,
             parameters: Array.isArray(tool.parameters) ? tool.parameters : [],
             pythonCodeKey: tool.pythonCodeKey,
+            requirementsKey: tool.requirementsKey || undefined,
             isActive: tool.isActive || false,
             createdAt: new Date(tool.createdAt),
             owner: tool.owner || undefined,
@@ -161,7 +181,12 @@ export default function ChatPage() {
           setCustomTools(tools);
           console.log(
             `✅ [ChatPage] Loaded ${tools.length} tools:`,
-            tools.map((t) => t.name)
+            tools.map((t) => ({
+              id: t.id,
+              name: t.name,
+              pythonCodeKey: t.pythonCodeKey,
+              requirementsKey: t.requirementsKey,
+            }))
           );
         } else {
           console.log("⚠️ [ChatPage] No tools data received");
@@ -256,6 +281,8 @@ export default function ChatPage() {
       setSystemPrompt("default");
       setSelectedDatabases([]);
       setSelectedTools([]);
+      setSelectedModelId("apac.anthropic.claude-sonnet-4-20250514-v1:0"); // Reset to default model
+      setForceToolUse(false); // Reset force tool use
       console.log("✅ [ChatPage] Template selections cleared");
       toast.info("Template cleared");
     }
@@ -339,10 +366,18 @@ export default function ChatPage() {
   const headerDescription = useMemo(() => {
     const parts = [];
 
+    // Add model info
+    const selectedModel = AVAILABLE_MODELS.find(
+      (m) => m.id === selectedModelId
+    );
+    if (selectedModel) {
+      parts.push(`${selectedModel.name}`);
+    }
+
     if (selectedTemplate && selectedTemplate !== "none") {
       const template = customTemplates.find((t) => t.id === selectedTemplate);
       if (template) {
-        parts.push(`Using ${template.name} template`);
+        parts.push(`using ${template.name} template`);
       }
     }
 
@@ -352,12 +387,18 @@ export default function ChatPage() {
       if (selectedPrompt) {
         parts.push(`with ${selectedPrompt.name} prompt`);
       }
-    } else {
+    } else if (!selectedTemplate || selectedTemplate === "none") {
       parts.push("with default assistant");
     }
 
     return parts.length > 0 ? parts.join(" ") : "AI conversation interface";
-  }, [selectedTemplate, customTemplates, systemPrompt, systemPrompts]);
+  }, [
+    selectedTemplate,
+    customTemplates,
+    systemPrompt,
+    systemPrompts,
+    selectedModelId,
+  ]);
 
   useEffect(() => {
     console.log("🔄 [ChatPage] Updating header props:", {
@@ -519,6 +560,19 @@ export default function ChatPage() {
         }),
       });
 
+      // Debug: Log Tools configuration
+      console.log("🔧 [ChatPage] Tools Configuration Debug:", {
+        selectedTools,
+        selectedToolsCount: selectedTools.length,
+        selectedToolsType: typeof selectedTools,
+        isArrayEmpty:
+          Array.isArray(selectedTools) && selectedTools.length === 0,
+        toolNames: selectedTools.map((id) => {
+          const tool = customTools.find((t) => t.id === id);
+          return tool ? tool.name : `Unknown(${id})`;
+        }),
+      });
+
       const requestPayload = {
         messages: validMessages.map((msg) => ({
           role: msg.role,
@@ -526,9 +580,39 @@ export default function ChatPage() {
           timestamp: msg.timestamp.toISOString(),
         })),
         systemPrompt: systemPromptContent,
-        modelId: "apac.anthropic.claude-sonnet-4-20250514-v1:0",
+        modelId: selectedModelId,
         databaseIds: selectedDatabases, // Add selected databases for RAG
+        toolIds: selectedTools, // Add selected tools for agent functionality
+        forceToolUse: forceToolUse && selectedTools.length > 0, // Force tool use if enabled and tools are selected
+        toolsData: selectedTools
+          .map((toolId) => {
+            const tool = customTools.find((t) => t.id === toolId);
+            return tool
+              ? {
+                  id: tool.id,
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: tool.parameters,
+                  pythonCodeKey: tool.pythonCodeKey,
+                  requirementsKey: tool.requirementsKey || undefined,
+                }
+              : null;
+          })
+          .filter(Boolean), // Remove null entries
       };
+
+      console.log("🔧 [ChatPage] Tool Data Debug:", {
+        selectedToolsIds: selectedTools,
+        customToolsAvailable: customTools.length,
+        customToolsList: customTools.map((t) => ({
+          id: t.id,
+          name: t.name,
+          hasParameters: !!t.parameters,
+          hasPythonCodeKey: !!t.pythonCodeKey,
+          hasRequirementsKey: !!t.requirementsKey,
+        })),
+        toolsDataMapped: requestPayload.toolsData,
+      });
 
       console.log("📤 [ChatPage] Calling Bedrock function with payload:", {
         messageCount: requestPayload.messages.length,
@@ -538,6 +622,12 @@ export default function ChatPage() {
           requestPayload.systemPrompt.substring(0, 100) +
           (requestPayload.systemPrompt.length > 100 ? "..." : ""),
         modelId: requestPayload.modelId,
+        selectedModel:
+          AVAILABLE_MODELS.find((m) => m.id === selectedModelId)?.name ||
+          "Unknown",
+        forceToolUse: requestPayload.forceToolUse,
+        toolsCount: selectedTools.length,
+        toolsDataCount: requestPayload.toolsData.length,
         // fullPayload: requestPayload, // Log the full payload for debugging (commented out to reduce noise)
       });
 
@@ -614,7 +704,29 @@ export default function ChatPage() {
         error: error,
         message: error instanceof Error ? error.message : "Unknown error",
         stack: error instanceof Error ? error.stack : undefined,
+        type: typeof error,
+        errorName: error instanceof Error ? error.name : undefined,
+        errorConstructor:
+          error instanceof Error ? error.constructor.name : undefined,
+        stringifiedError: JSON.stringify(
+          error,
+          Object.getOwnPropertyNames(error)
+        ),
       });
+
+      // Additional logging for GraphQL errors
+      if (error && typeof error === "object" && "graphQLErrors" in error) {
+        console.error(
+          "❌ [ChatPage] GraphQL Errors:",
+          (error as any).graphQLErrors
+        );
+      }
+      if (error && typeof error === "object" && "networkError" in error) {
+        console.error(
+          "❌ [ChatPage] Network Error:",
+          (error as any).networkError
+        );
+      }
 
       const errorResponse: Message = {
         id: (Date.now() + 1).toString(),
@@ -687,7 +799,7 @@ export default function ChatPage() {
   };
 
   const renderChatContent = () => (
-    <ScrollArea ref={scrollAreaRef} className="flex-1 p-4">
+    <ScrollArea ref={scrollAreaRef} className="h-full p-4">
       <div className="max-w-4xl mx-auto space-y-4">
         {messages.map((message) => (
           <div
@@ -786,395 +898,501 @@ export default function ChatPage() {
       {/* Main Layout Container */}
       <div className="flex flex-col h-[calc(100vh-5rem)]">
         {/* Main Content Area */}
-        <div className="flex-1 min-h-0 pb-32">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {activeTab === "chat" ? renderChatContent() : renderHistoryContent()}
         </div>
-      </div>
 
-      {/* Bottom Bar with Message Input - Fixed at bottom */}
-      <div
-        className={`fixed bottom-0 left-0 right-0 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 p-4 z-50 ${getSidebarMargin()}`}
-      >
-        <div className="max-w-4xl mx-auto space-y-3">
-          {/* Configuration Toggle */}
-          <div className="flex items-center justify-between">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                const newValue = !showConfiguration;
-                console.log(
-                  `⚙️ [ChatPage] Configuration visibility changed: ${showConfiguration} -> ${newValue}`
-                );
-                setShowConfiguration(newValue);
-              }}
-              className="text-xs text-muted-foreground hover:text-foreground"
-            >
-              <Settings className="h-3 w-3 mr-1" />
-              {showConfiguration ? "Hide Configuration" : "Show Configuration"}
-            </Button>
-          </div>
-
-          {/* Configuration Section */}
-          {showConfiguration && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 p-3 bg-muted/50 rounded-lg">
-              <div className="space-y-1">
-                <Label className="text-xs font-medium text-muted-foreground">
-                  Template
-                </Label>
-                <Select
-                  value={selectedTemplate}
-                  onValueChange={handleTemplateChange}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Select template" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    {customTemplates.map((template) => (
-                      <SelectItem key={template.id} value={template.id}>
-                        {template.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs font-medium text-muted-foreground">
-                  System Prompt
-                </Label>
-                <Select
-                  value={systemPrompt}
-                  onValueChange={(value) => {
-                    console.log(
-                      `📝 [ChatPage] System prompt changed from "${systemPrompt}" to "${value}"`
-                    );
-                    const selectedPrompt = systemPrompts.find(
-                      (p) => p.id === value
-                    );
-                    if (selectedPrompt) {
-                      console.log(
-                        `📝 [ChatPage] Selected prompt: "${selectedPrompt.name}" - "${selectedPrompt.content.substring(0, 100)}..."`
-                      );
-                    }
-                    setSystemPrompt(value);
-                  }}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Select prompt" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="default">Default Assistant</SelectItem>
-                    {systemPrompts.map((prompt) => (
-                      <SelectItem key={prompt.id} value={prompt.id}>
-                        {prompt.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs font-medium text-muted-foreground">
-                  Databases
-                </Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className="h-8 text-xs justify-start"
-                    >
-                      {selectedDatabases.length > 0
-                        ? `${selectedDatabases.length} selected`
-                        : "Select databases"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-56">
-                    <div className="space-y-2">
-                      <div className="text-sm font-medium">
-                        Select Databases
-                      </div>
-                      {customDatabases.map((database) => (
-                        <div
-                          key={database.id}
-                          className="flex items-center space-x-2"
-                        >
-                          <input
-                            type="checkbox"
-                            id={`db-${database.id}`}
-                            checked={selectedDatabases.includes(database.id)}
-                            onChange={(e) => {
-                              console.log(
-                                `🗄️ [ChatPage] Database ${e.target.checked ? "selected" : "deselected"}: ${database.name} (ID: ${database.id})`
-                              );
-                              console.log(
-                                `🗄️ [ChatPage] Current selectedDatabases before change:`,
-                                selectedDatabases
-                              );
-                              if (e.target.checked) {
-                                setSelectedDatabases((prev) => {
-                                  const newSelection = [...prev, database.id];
-                                  console.log(
-                                    `🗄️ [ChatPage] ✅ Added database - New selection:`,
-                                    newSelection
-                                  );
-                                  console.log(
-                                    `🗄️ [ChatPage] ✅ Database names in selection:`,
-                                    newSelection.map((id) => {
-                                      const db = customDatabases.find(
-                                        (d) => d.id === id
-                                      );
-                                      return db ? db.name : `Unknown(${id})`;
-                                    })
-                                  );
-                                  return newSelection;
-                                });
-                              } else {
-                                setSelectedDatabases((prev) => {
-                                  const newSelection = prev.filter(
-                                    (id) => id !== database.id
-                                  );
-                                  console.log(
-                                    `🗄️ [ChatPage] ❌ Removed database - New selection:`,
-                                    newSelection
-                                  );
-                                  console.log(
-                                    `🗄️ [ChatPage] ❌ Database names in selection:`,
-                                    newSelection.map((id) => {
-                                      const db = customDatabases.find(
-                                        (d) => d.id === id
-                                      );
-                                      return db ? db.name : `Unknown(${id})`;
-                                    })
-                                  );
-                                  return newSelection;
-                                });
-                              }
-                            }}
-                            className="rounded border-border"
-                          />
-                          <label
-                            htmlFor={`db-${database.id}`}
-                            className="text-sm"
-                          >
-                            {database.name}
-                          </label>
-                        </div>
-                      ))}
-                      {customDatabases.length === 0 && (
-                        <div className="text-sm text-muted-foreground">
-                          No databases available
-                        </div>
-                      )}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs font-medium text-muted-foreground">
-                  Tools
-                </Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className="h-8 text-xs justify-start"
-                    >
-                      {selectedTools.length > 0
-                        ? `${selectedTools.length} selected`
-                        : "Select tools"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-56">
-                    <div className="space-y-2">
-                      <div className="text-sm font-medium">Select Tools</div>
-                      {customTools.map((tool) => (
-                        <div
-                          key={tool.id}
-                          className="flex items-center space-x-2"
-                        >
-                          <input
-                            type="checkbox"
-                            id={`tool-${tool.id}`}
-                            checked={selectedTools.includes(tool.id)}
-                            onChange={(e) => {
-                              console.log(
-                                `🔧 [ChatPage] Tool ${e.target.checked ? "selected" : "deselected"}: ${tool.name}`
-                              );
-                              if (e.target.checked) {
-                                setSelectedTools((prev) => {
-                                  const newSelection = [...prev, tool.id];
-                                  console.log(
-                                    `🔧 [ChatPage] Updated tool selection:`,
-                                    newSelection
-                                  );
-                                  return newSelection;
-                                });
-                              } else {
-                                setSelectedTools((prev) => {
-                                  const newSelection = prev.filter(
-                                    (id) => id !== tool.id
-                                  );
-                                  console.log(
-                                    `🔧 [ChatPage] Updated tool selection:`,
-                                    newSelection
-                                  );
-                                  return newSelection;
-                                });
-                              }
-                            }}
-                            className="rounded border-border"
-                          />
-                          <label
-                            htmlFor={`tool-${tool.id}`}
-                            className="text-sm"
-                          >
-                            {tool.name}
-                          </label>
-                        </div>
-                      ))}
-                      {customTools.length === 0 && (
-                        <div className="text-sm text-muted-foreground">
-                          No tools available
-                        </div>
-                      )}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              </div>
-            </div>
-          )}
-
-          {attachedFile && (
-            <div className="p-3 bg-muted rounded-lg flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Paperclip className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground truncate">
-                  {attachedFile.name}
-                </span>
-              </div>
+        {/* Bottom Bar with Message Input */}
+        <div className="border-t border-border bg-background p-4 flex-shrink-0">
+          <div className="max-w-4xl mx-auto space-y-3">
+            {/* Configuration Toggle */}
+            <div className="flex items-center justify-between">
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={removeAttachedFile}
-                className="h-6 w-6 p-0"
+                onClick={() => {
+                  const newValue = !showConfiguration;
+                  console.log(
+                    `⚙️ [ChatPage] Configuration visibility changed: ${showConfiguration} -> ${newValue}`
+                  );
+                  setShowConfiguration(newValue);
+                }}
+                className="text-xs text-muted-foreground hover:text-foreground"
               >
-                <X className="h-3 w-3" />
+                <Settings className="h-3 w-3 mr-1" />
+                {showConfiguration
+                  ? "Hide Configuration"
+                  : "Show Configuration"}
               </Button>
             </div>
-          )}
 
-          <div className="flex items-center gap-2">
-            {/* Chat/History Toggle Button */}
-            <Toggle
-              pressed={activeTab === "history"}
-              onPressedChange={(pressed) => {
-                const newTab = pressed ? "history" : "chat";
-                console.log(
-                  `🔄 [ChatPage] Tab switched from ${activeTab} to ${newTab}`
-                );
-                setActiveTab(newTab);
-              }}
-              aria-label={
-                activeTab === "chat" ? "Switch to History" : "Switch to Chat"
-              }
-              className="border"
-            >
-              <Clock className="h-4 w-4" />
-            </Toggle>
-
-            <Separator orientation="vertical" className="h-6" />
-
-            {/* Text/Voice Mode Selector - Only show when on chat tab */}
-            {activeTab === "chat" && (
-              <>
-                <ToggleGroup
-                  type="single"
-                  value={messageMode}
-                  onValueChange={(value) => {
-                    if (value) {
+            {/* Model Selection */}
+            {showConfiguration && (
+              <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                <div className="flex items-center gap-4 flex-1">
+                  <Label className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+                    AI Model:
+                  </Label>
+                  <Select
+                    value={selectedModelId}
+                    onValueChange={(value) => {
                       console.log(
-                        `🎙️ [ChatPage] Message mode changed from ${messageMode} to ${value}`
+                        `🤖 [ChatPage] Model changed from "${selectedModelId}" to "${value}"`
                       );
-                      setMessageMode(value as "text" | "voice");
-                    }
-                  }}
-                >
-                  <ToggleGroupItem value="text" aria-label="Text mode">
-                    <MessageSquare className="h-4 w-4" />
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="voice" aria-label="Voice mode">
-                    <Mic className="h-4 w-4" />
-                  </ToggleGroupItem>
-                </ToggleGroup>
-
-                <Separator orientation="vertical" className="h-6" />
-              </>
-            )}
-
-            {/* Message Input - Only show when on chat tab */}
-            {activeTab === "chat" ? (
-              <div className="flex gap-2 flex-1 items-end">
-                <Textarea
-                  placeholder={
-                    messageMode === "text"
-                      ? "Type your message here... (Shift+Enter for new line, Enter to send)"
-                      : "Voice mode - click to record"
-                  }
-                  value={inputMessage}
-                  onChange={(e) => setInputMessage(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  className="flex-1 min-h-[40px] max-h-[120px] resize-none"
-                  disabled={messageMode === "voice"}
-                  rows={1}
-                />
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      onClick={handleFileSelect}
-                      variant="outline"
-                      size="icon"
-                      className="shrink-0"
-                    >
-                      <Paperclip className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Attach file</p>
-                  </TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      onClick={handleSendMessage}
-                      disabled={
-                        (!inputMessage.trim() && !attachedFile) || isTyping
+                      const selectedModel = AVAILABLE_MODELS.find(
+                        (m) => m.id === value
+                      );
+                      if (selectedModel) {
+                        console.log(
+                          `🤖 [ChatPage] Selected model: "${selectedModel.name}" - ${selectedModel.description}`
+                        );
                       }
-                      size="icon"
-                      className="shrink-0"
+                      setSelectedModelId(value);
+                    }}
+                  >
+                    <SelectTrigger className="min-w-fit max-w-md h-9">
+                      <SelectValue placeholder="Select model">
+                        {(() => {
+                          const selectedModel = AVAILABLE_MODELS.find(
+                            (m) => m.id === selectedModelId
+                          );
+                          return selectedModel ? (
+                            <div className="flex flex-col text-left">
+                              <span className="text-sm font-medium">
+                                {selectedModel.name}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {selectedModel.description}
+                              </span>
+                            </div>
+                          ) : (
+                            "Select model"
+                          );
+                        })()}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {AVAILABLE_MODELS.map((model) => (
+                        <SelectItem key={model.id} value={model.id}>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium">
+                              {model.name}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {model.description}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* Force Tool Use Toggle */}
+                {selectedTools.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="force-tool-use"
+                      checked={forceToolUse}
+                      onCheckedChange={(checked) => {
+                        console.log(
+                          `🔧 [ChatPage] Force tool use changed: ${forceToolUse} -> ${checked}`
+                        );
+                        setForceToolUse(checked);
+                      }}
+                    />
+                    <Label
+                      htmlFor="force-tool-use"
+                      className="text-sm font-medium text-muted-foreground cursor-pointer"
                     >
-                      <Send className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Send message (Enter)</p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-                <span>Viewing chat history</span>
+                      Force Tool Use
+                    </Label>
+                  </div>
+                )}
               </div>
             )}
+
+            {/* Configuration Section */}
+            {showConfiguration && (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 p-3 bg-muted/50 rounded-lg">
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Template
+                  </Label>
+                  <Select
+                    value={selectedTemplate}
+                    onValueChange={handleTemplateChange}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Select template" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {customTemplates.map((template) => (
+                        <SelectItem key={template.id} value={template.id}>
+                          {template.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    System Prompt
+                  </Label>
+                  <Select
+                    value={systemPrompt}
+                    onValueChange={(value) => {
+                      console.log(
+                        `📝 [ChatPage] System prompt changed from "${systemPrompt}" to "${value}"`
+                      );
+                      const selectedPrompt = systemPrompts.find(
+                        (p) => p.id === value
+                      );
+                      if (selectedPrompt) {
+                        console.log(
+                          `📝 [ChatPage] Selected prompt: "${selectedPrompt.name}" - "${selectedPrompt.content.substring(0, 100)}..."`
+                        );
+                      }
+                      setSystemPrompt(value);
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Select prompt" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">Default Assistant</SelectItem>
+                      {systemPrompts.map((prompt) => (
+                        <SelectItem key={prompt.id} value={prompt.id}>
+                          {prompt.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Databases
+                  </Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="h-8 text-xs justify-start"
+                      >
+                        {selectedDatabases.length > 0
+                          ? `${selectedDatabases.length} selected`
+                          : "Select databases"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-56">
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">
+                          Select Databases
+                        </div>
+                        {customDatabases.map((database) => (
+                          <div
+                            key={database.id}
+                            className="flex items-center space-x-2"
+                          >
+                            <input
+                              type="checkbox"
+                              id={`db-${database.id}`}
+                              checked={selectedDatabases.includes(database.id)}
+                              onChange={(e) => {
+                                console.log(
+                                  `🗄️ [ChatPage] Database ${e.target.checked ? "selected" : "deselected"}: ${database.name} (ID: ${database.id})`
+                                );
+                                console.log(
+                                  `🗄️ [ChatPage] Current selectedDatabases before change:`,
+                                  selectedDatabases
+                                );
+                                if (e.target.checked) {
+                                  setSelectedDatabases((prev) => {
+                                    const newSelection = [...prev, database.id];
+                                    console.log(
+                                      `🗄️ [ChatPage] ✅ Added database - New selection:`,
+                                      newSelection
+                                    );
+                                    console.log(
+                                      `🗄️ [ChatPage] ✅ Database names in selection:`,
+                                      newSelection.map((id) => {
+                                        const db = customDatabases.find(
+                                          (d) => d.id === id
+                                        );
+                                        return db ? db.name : `Unknown(${id})`;
+                                      })
+                                    );
+                                    return newSelection;
+                                  });
+                                } else {
+                                  setSelectedDatabases((prev) => {
+                                    const newSelection = prev.filter(
+                                      (id) => id !== database.id
+                                    );
+                                    console.log(
+                                      `🗄️ [ChatPage] ❌ Removed database - New selection:`,
+                                      newSelection
+                                    );
+                                    console.log(
+                                      `🗄️ [ChatPage] ❌ Database names in selection:`,
+                                      newSelection.map((id) => {
+                                        const db = customDatabases.find(
+                                          (d) => d.id === id
+                                        );
+                                        return db ? db.name : `Unknown(${id})`;
+                                      })
+                                    );
+                                    return newSelection;
+                                  });
+                                }
+                              }}
+                              className="rounded border-border"
+                            />
+                            <label
+                              htmlFor={`db-${database.id}`}
+                              className="text-sm"
+                            >
+                              {database.name}
+                            </label>
+                          </div>
+                        ))}
+                        {customDatabases.length === 0 && (
+                          <div className="text-sm text-muted-foreground">
+                            No databases available
+                          </div>
+                        )}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Tools
+                  </Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="h-8 text-xs justify-start"
+                      >
+                        {selectedTools.length > 0
+                          ? `${selectedTools.length} selected`
+                          : "Select tools"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-56">
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">Select Tools</div>
+                        {customTools.map((tool) => (
+                          <div
+                            key={tool.id}
+                            className="flex items-center space-x-2"
+                          >
+                            <input
+                              type="checkbox"
+                              id={`tool-${tool.id}`}
+                              checked={selectedTools.includes(tool.id)}
+                              onChange={(e) => {
+                                console.log(
+                                  `🔧 [ChatPage] Tool ${e.target.checked ? "selected" : "deselected"}: ${tool.name}`
+                                );
+                                if (e.target.checked) {
+                                  setSelectedTools((prev) => {
+                                    const newSelection = [...prev, tool.id];
+                                    console.log(
+                                      `🔧 [ChatPage] Updated tool selection:`,
+                                      newSelection
+                                    );
+                                    return newSelection;
+                                  });
+                                } else {
+                                  setSelectedTools((prev) => {
+                                    const newSelection = prev.filter(
+                                      (id) => id !== tool.id
+                                    );
+                                    console.log(
+                                      `🔧 [ChatPage] Updated tool selection:`,
+                                      newSelection
+                                    );
+                                    return newSelection;
+                                  });
+                                }
+                              }}
+                              className="rounded border-border"
+                            />
+                            <label
+                              htmlFor={`tool-${tool.id}`}
+                              className="text-sm"
+                            >
+                              {tool.name}
+                            </label>
+                          </div>
+                        ))}
+                        {customTools.length === 0 && (
+                          <div className="text-sm text-muted-foreground">
+                            No tools available
+                          </div>
+                        )}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+            )}
+
+            {attachedFile && (
+              <div className="p-3 bg-muted rounded-lg flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Paperclip className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground truncate">
+                    {attachedFile.name}
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={removeAttachedFile}
+                  className="h-6 w-6 p-0"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              {/* Chat/History Toggle Button */}
+              <Toggle
+                pressed={activeTab === "history"}
+                onPressedChange={(pressed) => {
+                  const newTab = pressed ? "history" : "chat";
+                  console.log(
+                    `🔄 [ChatPage] Tab switched from ${activeTab} to ${newTab}`
+                  );
+                  setActiveTab(newTab);
+                }}
+                aria-label={
+                  activeTab === "chat" ? "Switch to History" : "Switch to Chat"
+                }
+                className="border"
+              >
+                <Clock className="h-4 w-4" />
+              </Toggle>
+
+              {/* Clear Conversation Button - Only show when on chat tab and has messages */}
+              {activeTab === "chat" && messages.length > 0 && (
+                <>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={clearChat}
+                        className="border"
+                      >
+                        <RefreshCcw className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Clear Conversation</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </>
+              )}
+
+              <Separator orientation="vertical" className="h-6" />
+
+              {/* Text/Voice Mode Selector - Only show when on chat tab */}
+              {activeTab === "chat" && (
+                <>
+                  <ToggleGroup
+                    type="single"
+                    value={messageMode}
+                    onValueChange={(value) => {
+                      if (value) {
+                        console.log(
+                          `🎙️ [ChatPage] Message mode changed from ${messageMode} to ${value}`
+                        );
+                        setMessageMode(value as "text" | "voice");
+                      }
+                    }}
+                  >
+                    <ToggleGroupItem value="text" aria-label="Text mode">
+                      <MessageSquare className="h-4 w-4" />
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="voice" aria-label="Voice mode">
+                      <Mic className="h-4 w-4" />
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+
+                  <Separator orientation="vertical" className="h-6" />
+                </>
+              )}
+
+              {/* Message Input - Only show when on chat tab */}
+              {activeTab === "chat" ? (
+                <div className="flex gap-2 flex-1 items-end">
+                  <Textarea
+                    placeholder={
+                      messageMode === "text"
+                        ? "Type your message here... (Shift+Enter for new line, Enter to send)"
+                        : "Voice mode - click to record"
+                    }
+                    value={inputMessage}
+                    onChange={(e) => setInputMessage(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    className="flex-1 min-h-[40px] max-h-[120px] resize-none"
+                    disabled={messageMode === "voice"}
+                    rows={1}
+                  />
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        onClick={handleFileSelect}
+                        variant="outline"
+                        size="icon"
+                        className="shrink-0"
+                      >
+                        <Paperclip className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Attach file</p>
+                    </TooltipContent>
+                  </Tooltip>
+
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        onClick={handleSendMessage}
+                        disabled={
+                          (!inputMessage.trim() && !attachedFile) || isTyping
+                        }
+                        size="icon"
+                        className="shrink-0"
+                      >
+                        <Send className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Send message (Enter)</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              ) : (
+                <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+                  <span>Viewing chat history</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

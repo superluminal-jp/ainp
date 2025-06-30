@@ -28,6 +28,16 @@ const schema = a.schema({
     databaseFileId: a.string(),
   }),
 
+  // Tool data structure for agent functionality
+  ToolData: a.customType({
+    id: a.string().required(),
+    name: a.string().required(),
+    description: a.string().required(),
+    parameters: a.json(),
+    pythonCodeKey: a.string().required(),
+    requirementsKey: a.string(),
+  }),
+
   systemPrompts: a
     .model({
       id: a.id().required(),
@@ -111,6 +121,9 @@ const schema = a.schema({
       systemPrompt: a.string(),
       modelId: a.string(),
       databaseIds: a.string().array(), // Add database IDs for RAG
+      toolIds: a.string().array(), // Add tool IDs for agent functionality
+      toolsData: a.ref("ToolData").array(), // Add detailed tool data
+      forceToolUse: a.boolean(), // Force tool use when tools are available
     })
     .returns(a.ref("ChatResponse"))
     .authorization((allow) => [allow.authenticated()])

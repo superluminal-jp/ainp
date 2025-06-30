@@ -705,7 +705,7 @@ export default function ToolsPage() {
                   </Label>
                   <Textarea
                     id="python-code"
-                    placeholder={`def lambda_handler(event, context):
+                    placeholder={`def handler(event, context):
     # Your lambda function code here
     return {
         'statusCode': 200,
