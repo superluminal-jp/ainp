@@ -76,6 +76,7 @@ const schema = a.schema({
       description: a.string().required(),
       parameters: a.json(),
       pythonCodeKey: a.string().required(),
+      requirementsKey: a.string(),
       isActive: a.boolean().default(true),
       createdAt: a.datetime().required(),
       owner: a.string(),

@@ -26,6 +26,7 @@ export interface Tool {
   description: string;
   parameters: ToolParameter[];
   pythonCodeKey: string;
+  requirementsKey?: string;
   isActive: boolean;
   createdAt: Date;
   owner?: string;

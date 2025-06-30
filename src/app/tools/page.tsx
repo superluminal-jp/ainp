@@ -43,6 +43,7 @@ export default function ToolsPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [editingTool, setEditingTool] = useState<Tool | null>(null);
   const [pythonCode, setPythonCode] = useState("");
+  const [requirementsTxt, setRequirementsTxt] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -103,6 +104,7 @@ export default function ToolsPage() {
           ? JSON.parse(tool.parameters as string)
           : [],
         pythonCodeKey: tool.pythonCodeKey,
+        requirementsKey: tool.requirementsKey || undefined,
         isActive: Boolean(tool.isActive ?? true),
         createdAt: new Date(tool.createdAt),
         owner: tool.owner || undefined,
@@ -174,7 +176,8 @@ export default function ToolsPage() {
       name: tool.name,
       description: tool.description,
       parameters: tool.parameters,
-      // Note: Python code would need to be fetched separately for security
+      hasRequirements: Boolean(tool.requirementsKey),
+      // Note: Python code and requirements.txt would need to be fetched separately for security
     };
 
     const blob = new Blob([JSON.stringify(exportData, null, 2)], {
@@ -203,6 +206,7 @@ export default function ToolsPage() {
         description: importData.description || "",
       });
       setParameters(importData.parameters || []);
+      setRequirementsTxt(importData.requirements || "");
       setValidationErrors({});
       showNotification("success", "Tool configuration imported successfully");
     } catch (error) {
@@ -223,6 +227,23 @@ export default function ToolsPage() {
       return result.path;
     } catch (error) {
       console.error("Error uploading Python code:", error);
+      throw error;
+    }
+  };
+
+  const uploadRequirementsTxt = async (
+    requirements: string,
+    toolId: string
+  ) => {
+    try {
+      const fileName = `requirements_${toolId}.txt`;
+      const result = await uploadData({
+        path: `tools/lambda/shared/${fileName}`,
+        data: new Blob([requirements], { type: "text/plain" }),
+      }).result;
+      return result.path;
+    } catch (error) {
+      console.error("Error uploading requirements.txt:", error);
       throw error;
     }
   };
@@ -250,6 +271,34 @@ export default function ToolsPage() {
     }
   };
 
+  const downloadRequirementsTxt = async (tool: Tool) => {
+    try {
+      if (!tool.requirementsKey) {
+        showNotification("error", "No requirements.txt file available");
+        return;
+      }
+
+      const url = await getUrl({
+        path: tool.requirementsKey,
+      });
+      const response = await fetch(url.url.toString());
+      const requirements = await response.text();
+
+      const blob = new Blob([requirements], { type: "text/plain" });
+      const downloadUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = `${tool.name.replace(/\s+/g, "_")}_requirements.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      console.error("Error downloading requirements.txt:", error);
+      showNotification("error", "Failed to download requirements.txt");
+    }
+  };
+
   const handleAddTool = async () => {
     if (!validateForm()) {
       showNotification("error", "Please fix validation errors");
@@ -261,11 +310,17 @@ export default function ToolsPage() {
       const toolId = Date.now().toString();
       const pythonCodeKey = await uploadPythonCode(pythonCode, toolId);
 
+      let requirementsKey: string | undefined;
+      if (requirementsTxt.trim()) {
+        requirementsKey = await uploadRequirementsTxt(requirementsTxt, toolId);
+      }
+
       await client.models.tools.create({
         name: formData.name.trim(),
         description: formData.description.trim(),
         parameters: JSON.stringify(parameters.filter((p) => p.name.trim())),
         pythonCodeKey,
+        requirementsKey,
         isActive: true,
         createdAt: new Date().toISOString(),
       });
@@ -301,6 +356,26 @@ export default function ToolsPage() {
       console.error("Error loading Python code:", error);
       showNotification("error", "Failed to load Python code");
     }
+
+    // Load existing requirements.txt if it exists
+    if (tool.requirementsKey) {
+      try {
+        const requirementsUrl = await getUrl({
+          path: tool.requirementsKey,
+        });
+        const requirementsResponse = await fetch(
+          requirementsUrl.url.toString()
+        );
+        const requirements = await requirementsResponse.text();
+        setRequirementsTxt(requirements);
+      } catch (error) {
+        console.error("Error loading requirements.txt:", error);
+        showNotification("error", "Failed to load requirements.txt");
+        setRequirementsTxt(""); // Set empty if failed to load
+      }
+    } else {
+      setRequirementsTxt(""); // No requirements file exists
+    }
   };
 
   const handleUpdateTool = async () => {
@@ -324,12 +399,44 @@ export default function ToolsPage() {
         pythonCodeKey = await uploadPythonCode(pythonCode, editingTool.id);
       }
 
+      // Handle requirements.txt updates
+      let requirementsKey = editingTool.requirementsKey;
+      let currentRequirements = "";
+
+      // Get current requirements if they exist
+      if (editingTool.requirementsKey) {
+        try {
+          const currentRequirementsUrl = await getUrl({
+            path: editingTool.requirementsKey,
+          });
+          const currentRequirementsResponse = await fetch(
+            currentRequirementsUrl.url.toString()
+          );
+          currentRequirements = await currentRequirementsResponse.text();
+        } catch (error) {
+          console.error("Error loading current requirements:", error);
+        }
+      }
+
+      // Upload new requirements.txt if changed or if new content is provided
+      if (requirementsTxt.trim() !== currentRequirements.trim()) {
+        if (requirementsTxt.trim()) {
+          requirementsKey = await uploadRequirementsTxt(
+            requirementsTxt,
+            editingTool.id
+          );
+        } else {
+          requirementsKey = undefined; // Remove requirements if empty
+        }
+      }
+
       await client.models.tools.update({
         id: editingTool.id,
         name: formData.name.trim(),
         description: formData.description.trim(),
         parameters: JSON.stringify(parameters.filter((p) => p.name.trim())),
         pythonCodeKey,
+        requirementsKey,
       });
 
       await loadTools();
@@ -384,6 +491,7 @@ export default function ToolsPage() {
     });
     setParameters([]);
     setPythonCode("");
+    setRequirementsTxt("");
     setEditingTool(null);
     setIsEditing(false);
   };
@@ -609,6 +717,28 @@ export default function ToolsPage() {
                   />
                 </div>
 
+                {/* Requirements.txt Section */}
+                <div className="space-y-1">
+                  <Label htmlFor="requirements-txt" className="text-xs">
+                    Requirements.txt (Optional)
+                  </Label>
+                  <Textarea
+                    id="requirements-txt"
+                    placeholder={`# List your Python dependencies here
+# Example:
+requests==2.31.0
+boto3==1.34.0
+pandas==2.1.0`}
+                    value={requirementsTxt}
+                    onChange={(e) => setRequirementsTxt(e.target.value)}
+                    className="min-h-24 text-xs font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Specify Python packages required by your Lambda function.
+                    Leave empty if no additional dependencies are needed.
+                  </p>
+                </div>
+
                 <div className="flex gap-2">
                   {isEditing ? (
                     <>
@@ -741,6 +871,9 @@ export default function ToolsPage() {
                               {tool.parameters.length > 0 && (
                                 <div>Parameters: {tool.parameters.length}</div>
                               )}
+                              {tool.requirementsKey && (
+                                <div>Has requirements.txt</div>
+                              )}
                               <div>
                                 Created: {tool.createdAt.toLocaleDateString()}
                               </div>
@@ -757,6 +890,17 @@ export default function ToolsPage() {
                               >
                                 <Download className="h-3 w-3" />
                               </Button>
+                              {tool.requirementsKey && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => downloadRequirementsTxt(tool)}
+                                  className="h-6 w-6 p-0"
+                                  title="Download requirements.txt"
+                                >
+                                  <Download className="h-3 w-3" />
+                                </Button>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="sm"
