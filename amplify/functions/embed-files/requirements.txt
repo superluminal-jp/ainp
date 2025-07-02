@@ -1,5 +1,5 @@
-# boto3>=1.34.0
-faiss-cpu>=1.7.4
-# numpy>=1.24.0,<2.0.0
-PyPDF2>=3.0.0
-python-docx>=0.8.11 
+boto3
+faiss-cpu
+numpy
+PyPDF2
+python-docx
