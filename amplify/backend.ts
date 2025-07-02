@@ -38,7 +38,3 @@ backend.chatBedrockFunction.addEnvironment(
   backend.storage.resources.bucket.bucketName
 );
 
-// Grant chat-bedrock function permission to invoke execute-tool function
-backend.chatBedrockFunction.resources.lambda.grantInvoke(
-  backend.chatBedrockFunction.resources.lambda
-);
