@@ -5,7 +5,7 @@ import os
 import pickle
 import tempfile
 import PyPDF2
-import docx
+from docx import Document
 import numpy as np
 import faiss
 from typing import List, Dict
@@ -125,7 +125,7 @@ def extract_text_from_file(
                 tmp_file.write(file_content)
                 tmp_file.flush()
 
-                doc = docx.Document(tmp_file.name)
+                doc = Document(tmp_file.name)
                 text = ""
                 for paragraph in doc.paragraphs:
                     text += paragraph.text + "\n"
