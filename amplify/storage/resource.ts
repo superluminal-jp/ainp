@@ -20,9 +20,5 @@ export const storage = defineStorage({
       allow.guest.to(["read"]),
     ],
 
-    // Custom tools - authenticated users can manage their tool files
-    "tools/lambda/shared/*": [
-      allow.authenticated.to(["read", "write", "delete"]),
-    ],
   }),
 });

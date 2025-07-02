@@ -28,16 +28,6 @@ const schema = a.schema({
     databaseFileId: a.string(),
   }),
 
-  // Tool data structure for agent functionality
-  ToolData: a.customType({
-    id: a.string().required(),
-    name: a.string().required(),
-    description: a.string().required(),
-    parameters: a.json(),
-    pythonCodeKey: a.string().required(),
-    requirementsKey: a.string(),
-  }),
-
   systemPrompts: a
     .model({
       id: a.id().required(),
@@ -79,23 +69,6 @@ const schema = a.schema({
       allow.authenticated().to(["read"]),
     ]),
 
-  tools: a
-    .model({
-      id: a.id().required(),
-      name: a.string().required(),
-      description: a.string().required(),
-      parameters: a.json(),
-      pythonCodeKey: a.string().required(),
-      requirementsKey: a.string(),
-      isActive: a.boolean().default(true),
-      createdAt: a.datetime().required(),
-      owner: a.string(),
-    })
-    .authorization((allow) => [
-      allow.owner().to(["read", "create", "update", "delete"]),
-      allow.authenticated().to(["read"]),
-    ]),
-
   templates: a
     .model({
       id: a.id().required(),
@@ -103,7 +76,6 @@ const schema = a.schema({
       description: a.string().required(),
       systemPromptId: a.id().required(),
       databaseIds: a.json().required(),
-      toolIds: a.json().required(),
       isActive: a.boolean().default(true),
       createdAt: a.datetime().required(),
       owner: a.string(),
@@ -121,9 +93,6 @@ const schema = a.schema({
       systemPrompt: a.string(),
       modelId: a.string(),
       databaseIds: a.string().array(), // Add database IDs for RAG
-      toolIds: a.string().array(), // Add tool IDs for agent functionality
-      toolsData: a.ref("ToolData").array(), // Add detailed tool data
-      forceToolUse: a.boolean(), // Force tool use when tools are available
     })
     .returns(a.ref("ChatResponse"))
     .authorization((allow) => [allow.authenticated()])

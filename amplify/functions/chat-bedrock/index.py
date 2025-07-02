@@ -16,16 +16,12 @@ logger.setLevel(logging.INFO)
 # Initialize clients
 bedrock_client = boto3.client("bedrock-runtime")
 s3_client = boto3.client("s3")
-lambda_client = boto3.client("lambda")
 
 # Environment variables
 STORAGE_BUCKET_NAME = os.environ.get("STORAGE_BUCKET_NAME")
 FAISS_INDEX_PREFIX = os.environ.get("FAISS_INDEX_PREFIX", "faiss-indexes")
 EMBEDDING_MODEL_ID = "amazon.titan-embed-text-v1"
 EMBEDDING_DIMENSION = 1536
-EXECUTE_TOOL_FUNCTION_NAME = os.environ.get(
-    "EXECUTE_TOOL_FUNCTION_NAME", "amplify-ainp-executeToolFunction-*"
-)
 
 
 def get_embeddings(texts: List[str]) -> List[List[float]]:
@@ -458,321 +454,14 @@ def build_rag_context(relevant_docs: List[Dict]) -> str:
     return final_context
 
 
-def convert_tools_to_bedrock_format(tools: List[Dict]) -> List[Dict]:
-    """Convert tool definitions to Amazon Bedrock Converse API format.
-
-    This function creates valid tool specifications that are compatible with
-    Bedrock's Converse API requirements. It handles parameter validation,
-    type mapping, and schema generation.
-    """
-    logger.info(f"🔧 Converting {len(tools)} tools to Bedrock format")
-
-    if not tools or not isinstance(tools, list):
-        logger.warning("⚠️ No tools provided or invalid tools format")
-        return []
-
-    bedrock_tools = []
-
-    for tool_idx, tool in enumerate(tools):
-        try:
-            logger.debug(f"🔧 Processing tool {tool_idx + 1}/{len(tools)}")
-            logger.debug(f"🔧 Raw tool data: {json.dumps(tool, default=str)}")
-
-            if not isinstance(tool, dict):
-                logger.warning(f"⚠️ Tool {tool_idx + 1} is not a dictionary, skipping")
-                continue
-
-            # Extract and validate required fields
-            tool_id = tool.get("id", "")
-            tool_name = tool.get("name", "")
-            tool_description = tool.get("description", "")
-            tool_parameters = tool.get("parameters", [])
-
-            if not tool_id or not tool_name or not tool_description:
-                logger.warning(
-                    f"⚠️ Tool {tool_idx + 1} missing required fields: "
-                    f"id={bool(tool_id)}, name={bool(tool_name)}, description={bool(tool_description)}"
-                )
-                continue
-
-            # Create Bedrock-compatible tool name
-            bedrock_tool_name = f"custom_tool_{tool_id}"
-
-            logger.info(f"✅ Converting tool: {tool_name} -> {bedrock_tool_name}")
-
-            # Start with basic tool specification
-            bedrock_tool = {
-                "toolSpec": {
-                    "name": bedrock_tool_name,
-                    "description": tool_description.strip(),
-                }
-            }
-
-            # Process parameters if they exist
-            if (
-                tool_parameters
-                and isinstance(tool_parameters, list)
-                and len(tool_parameters) > 0
-            ):
-                logger.debug(f"🔧 Processing {len(tool_parameters)} parameters")
-
-                # Validate and process each parameter
-                valid_properties = {}
-                required_params = []
-
-                for param_idx, param in enumerate(tool_parameters):
-                    if not isinstance(param, dict):
-                        logger.warning(
-                            f"⚠️ Parameter {param_idx + 1} is not a dict, skipping"
-                        )
-                        continue
-
-                    param_name = param.get("name", "").strip()
-                    param_type = param.get("type", "string").lower()
-                    param_description = param.get("description", "").strip()
-                    param_required = bool(param.get("required", False))
-
-                    if not param_name:
-                        logger.warning(
-                            f"⚠️ Parameter {param_idx + 1} has no name, skipping"
-                        )
-                        continue
-
-                    # Map to JSON Schema types
-                    json_type_mapping = {
-                        "string": "string",
-                        "number": "number",
-                        "integer": "number",
-                        "boolean": "boolean",
-                        "array": "array",
-                        "object": "object",
-                    }
-
-                    json_type = json_type_mapping.get(param_type, "string")
-
-                    valid_properties[param_name] = {
-                        "type": json_type,
-                        "description": param_description or f"Parameter: {param_name}",
-                    }
-
-                    if param_required:
-                        required_params.append(param_name)
-
-                    logger.debug(
-                        f"✅ Added parameter: {param_name} (type: {json_type}, required: {param_required})"
-                    )
-
-                # Only add inputSchema if we have valid properties
-                if valid_properties:
-                    json_schema = {
-                        "type": "object",
-                        "properties": valid_properties,
-                        "additionalProperties": False,
-                    }
-
-                    # Only add required array if there are required parameters
-                    if required_params:
-                        json_schema = {**json_schema, "required": required_params}
-
-                    bedrock_tool["toolSpec"]["inputSchema"] = {"json": json_schema}
-
-                    logger.info(
-                        f"✅ Tool {tool_name}: Added input schema with {len(valid_properties)} properties"
-                    )
-                    logger.debug(
-                        f"🔧 Input schema: {json.dumps(json_schema, indent=2)}"
-                    )
-                else:
-                    logger.info(
-                        f"ℹ️ Tool {tool_name}: No valid parameters found, tool will have no input schema"
-                    )
-            else:
-                logger.info(
-                    f"ℹ️ Tool {tool_name}: No parameters provided, tool will have no input schema"
-                )
-
-            # Add the completed tool to the list
-            bedrock_tools.append(bedrock_tool)
-
-            logger.info(f"🎉 Successfully converted tool: {tool_name}")
-            logger.debug(
-                f"🔧 Final tool spec: {json.dumps(bedrock_tool, indent=2, default=str)}"
-            )
-
-        except Exception as e:
-            logger.error(f"❌ Error processing tool {tool_idx + 1}: {str(e)}")
-            logger.debug(f"❌ Tool processing traceback: {traceback.format_exc()}")
-            continue
-
-    logger.info(
-        f"🎉 Successfully converted {len(bedrock_tools)}/{len(tools)} tools to Bedrock format"
-    )
-
-    # Log final result for debugging
-    if bedrock_tools:
-        logger.debug("🔧 All converted Bedrock tools:")
-        for idx, tool in enumerate(bedrock_tools):
-            logger.debug(f"  Tool {idx + 1}: {json.dumps(tool, indent=4, default=str)}")
-
-    return bedrock_tools
-
-
-def execute_custom_tool(
-    tool_name: str,
-    tool_code_key: str,
-    parameters: Dict,
-    requirements_key: Optional[str] = None,
-) -> Dict:
-    """Execute a custom tool by invoking the execute-tool Lambda function.
-
-    Calls the execute-tool Lambda function with the specified tool code and parameters.
-    Handles the response and provides standardized success/error reporting.
-
-    Args:
-        tool_name (str): Name of the tool being executed (for logging/identification).
-        tool_code_key (str): S3 key or identifier for the tool's Python code.
-        parameters (Dict): Dictionary of parameters to pass to the tool.
-        requirements_key (Optional[str]): S3 key for requirements.txt file (optional).
-
-    Returns:
-        Dict: Execution result with keys:
-              - success (bool): Whether execution succeeded
-              - result (Dict): Tool output if successful
-              - error (str): Error message if failed
-              - tool_name (str): Name of the executed tool
-
-    Example:
-        >>> result = execute_custom_tool("calculator", "tools/calc.py", {"expr": "2+2"})
-        >>> if result["success"]:
-        ...     print(f"Result: {result['result']}")
-    """
-    logger.info(f"Executing custom tool: {tool_name}")
-    logger.debug(f"Tool code key: {tool_code_key}")
-    logger.debug(f"Parameters: {json.dumps(parameters, default=str)}")
-
-    # Input validation
-    if not tool_name or not isinstance(tool_name, str):
-        error_msg = "Tool name must be a non-empty string"
-        logger.error(error_msg)
-        return {"success": False, "error": error_msg, "tool_name": tool_name}
-
-    if not tool_code_key or not isinstance(tool_code_key, str):
-        error_msg = "Tool code key must be a non-empty string"
-        logger.error(error_msg)
-        return {"success": False, "error": error_msg, "tool_name": tool_name}
-
-    # Validate and normalize parameters
-    if parameters is None:
-        logger.info(f"Parameters is None for tool {tool_name}, using empty dict")
-        parameters = {}
-    elif not isinstance(parameters, dict):
-        logger.error(
-            f"Parameters is not a dict for tool {tool_name}: type={type(parameters)}, value={parameters}"
-        )
-        error_msg = f"Parameters must be a dictionary, got {type(parameters).__name__}"
-        return {"success": False, "error": error_msg, "tool_name": tool_name}
-
-    # Ensure parameters can be JSON serialized
-    try:
-        json.dumps(parameters, default=str)
-    except (TypeError, ValueError) as e:
-        logger.error(
-            f"Parameters cannot be JSON serialized for tool {tool_name}: {str(e)}"
-        )
-        error_msg = f"Parameters must be JSON serializable: {str(e)}"
-        return {"success": False, "error": error_msg, "tool_name": tool_name}
-
-    try:
-        # Prepare Lambda payload
-        payload = {
-            "tool_name": tool_name,
-            "tool_code_key": tool_code_key,
-            "parameters": parameters,
-        }
-
-        # Add requirements_key if provided
-        if requirements_key:
-            payload["requirements_key"] = requirements_key
-
-        logger.debug(f"Invoking Lambda function: {EXECUTE_TOOL_FUNCTION_NAME}")
-
-        # Invoke execute-tool Lambda function
-        response = lambda_client.invoke(
-            FunctionName=EXECUTE_TOOL_FUNCTION_NAME,
-            InvocationType="RequestResponse",
-            Payload=json.dumps(payload),
-        )
-
-        # Parse response
-        response_payload = json.loads(response["Payload"].read())
-        logger.debug(f"Lambda response status: {response.get('StatusCode')}")
-
-        # Check for Lambda-level errors
-        if response.get("StatusCode") != 200:
-            error_msg = (
-                f"Lambda invocation failed with status {response.get('StatusCode')}"
-            )
-            logger.error(error_msg)
-            return {"success": False, "error": error_msg, "tool_name": tool_name}
-
-        # Check for function-level errors in the response
-        if "errorMessage" in response_payload:
-            error_msg = response_payload.get("errorMessage", "Unknown Lambda error")
-            logger.error(f"Tool execution failed: {error_msg}")
-            return {"success": False, "error": error_msg, "tool_name": tool_name}
-
-        # Process successful execution
-        if response_payload.get("success", False):
-            result = response_payload.get("result", {})
-            logger.info(f"Tool {tool_name} executed successfully")
-            logger.debug(f"Tool result: {json.dumps(result, default=str)[:200]}...")
-
-            return {
-                "success": True,
-                "result": result,
-                "tool_name": tool_name,
-            }
-        else:
-            error_msg = response_payload.get(
-                "error", "Tool execution failed with unknown error"
-            )
-            logger.error(f"Tool {tool_name} execution failed: {error_msg}")
-            return {"success": False, "error": error_msg, "tool_name": tool_name}
-
-    except json.JSONDecodeError as e:
-        error_msg = f"Failed to parse Lambda response: {str(e)}"
-        logger.error(error_msg)
-        return {"success": False, "error": error_msg, "tool_name": tool_name}
-
-    except lambda_client.exceptions.ResourceNotFoundException as e:
-        error_msg = f"Execute-tool Lambda function not found: {str(e)}"
-        logger.error(error_msg)
-        return {"success": False, "error": error_msg, "tool_name": tool_name}
-
-    except lambda_client.exceptions.InvalidParameterValueException as e:
-        error_msg = f"Invalid parameters for Lambda invocation: {str(e)}"
-        logger.error(error_msg)
-        return {"success": False, "error": error_msg, "tool_name": tool_name}
-
-    except Exception as e:
-        error_msg = f"Unexpected error invoking tool {tool_name}: {str(e)}"
-        logger.error(error_msg)
-        logger.debug(f"Tool execution traceback: {traceback.format_exc()}")
-        return {"success": False, "error": error_msg, "tool_name": tool_name}
-
-
 def handler(event, context):
     """
-    AWS Lambda handler for chat with Bedrock Converse API, RAG, and tool use support.
+    AWS Lambda handler for chat with Bedrock Converse API and RAG support.
 
     This function provides a comprehensive chat interface that combines:
     - Large Language Model conversation via Amazon Bedrock
     - Retrieval-Augmented Generation (RAG) using FAISS vector search
-    - Custom tool execution capabilities
     - Multi-turn conversation support
-
-    The handler follows AWS official patterns from:
-    https://docs.aws.amazon.com/bedrock/latest/userguide/tool-use-examples.html
 
     Args:
         event (Dict): Lambda event containing:
@@ -780,8 +469,6 @@ def handler(event, context):
             - arguments.systemPrompt (str, optional): System prompt for the AI
             - arguments.modelId (str, optional): Bedrock model identifier
             - arguments.databaseIds (List[str], optional): Vector databases for RAG
-            - arguments.toolIds (List[str], optional): Available tool identifiers
-            - arguments.toolsData (List[Dict], optional): Full tool definitions
 
         context: Lambda context object (standard AWS Lambda context)
 
@@ -819,19 +506,10 @@ def handler(event, context):
             "modelId", "apac.anthropic.claude-sonnet-4-20250514-v1:0"
         )
         database_ids = arguments.get("databaseIds", [])
-        tool_ids = arguments.get("toolIds", [])
-        tools_data = arguments.get("toolsData", [])
-        force_tool_use = arguments.get("forceToolUse", False)
 
         logger.info(
-            f"Request configuration - Model: {model_id}, Databases: {len(database_ids)}, "
-            f"Tools: {len(tools_data)}, Force Tool Use: {force_tool_use}"
+            f"Request configuration - Model: {model_id}, Databases: {len(database_ids)}"
         )
-
-        # Validate and normalize inputs
-        if not isinstance(tool_ids, list):
-            logger.warning("toolIds is not a list, converting to empty list")
-            tool_ids = []
 
         if not isinstance(messages_data, list) or not messages_data:
             raise ValueError("Messages array is required and must be non-empty")
@@ -868,40 +546,6 @@ def handler(event, context):
                     logger.debug(f"RAG error traceback: {traceback.format_exc()}")
             else:
                 logger.warning("No user message found for RAG search")
-
-        # Process tools using passed tool data
-        bedrock_tools = []
-        if tools_data and isinstance(tools_data, list):
-            logger.info(f"Processing {len(tools_data)} tools for Converse API")
-            logger.info(
-                f"Raw tools data received: {json.dumps(tools_data, default=str, indent=2)}"
-            )
-
-            # Detailed validation of each tool
-            for tool_idx, tool in enumerate(tools_data):
-                logger.debug(
-                    f"Tool {tool_idx + 1} structure: {json.dumps(tool, default=str, indent=2)}"
-                )
-                logger.debug(
-                    f"Tool {tool_idx + 1} parameters type: {type(tool.get('parameters', []))}"
-                )
-                logger.debug(
-                    f"Tool {tool_idx + 1} parameters content: {tool.get('parameters', [])}"
-                )
-
-            try:
-                bedrock_tools = convert_tools_to_bedrock_format(tools_data)
-                logger.info(f"Successfully converted {len(bedrock_tools)} tools")
-                logger.info(
-                    f"Converted bedrock tools: {json.dumps(bedrock_tools, default=str, indent=2)}"
-                )
-            except Exception as e:
-                logger.error(f"Tool conversion failed: {str(e)}")
-                logger.debug(f"Tool conversion traceback: {traceback.format_exc()}")
-        else:
-            logger.warning(
-                f"No tools data provided or invalid format. tools_data: {tools_data}, type: {type(tools_data)}"
-            )
 
         # Combine system prompt with RAG context
         enhanced_system_prompt = system_prompt
@@ -958,26 +602,6 @@ def handler(event, context):
             converse_params["system"] = [{"text": enhanced_system_prompt}]
             logger.debug("Added system prompt to Converse API parameters")
 
-            # Add tools if available
-        if bedrock_tools:
-            tool_config: Dict[str, Any] = {"tools": bedrock_tools}
-
-            # Force tool use if requested
-            if force_tool_use:
-                tool_config["toolChoice"] = {"any": {}}
-                logger.info(
-                    f"Added {len(bedrock_tools)} tools to Converse API with forced tool use"
-                )
-                logger.info(
-                    f"Tool choice configuration: {json.dumps(tool_config['toolChoice'], default=str)}"
-                )
-            else:
-                logger.info(f"Added {len(bedrock_tools)} tools to Converse API")
-
-            logger.info(f"Final tool config: {json.dumps(tool_config, default=str)}")
-
-            converse_params["toolConfig"] = tool_config
-
         # Generate response using Converse API
         logger.info("Invoking Bedrock Converse API...")
         logger.info(
@@ -991,140 +615,7 @@ def handler(event, context):
             logger.error(f"Bedrock API call failed: {str(e)}")
             raise
 
-        stop_reason = response.get("stopReason", "")
-        logger.info(f"Bedrock response stop reason: {stop_reason}")
-
-        # Handle tool use following AWS documentation pattern
-        if stop_reason == "tool_use":
-            logger.info("Model requested tool use")
-
-            # Get the output message from the model (following AWS pattern)
-            output_message = response["output"]["message"]
-            bedrock_messages.append(output_message)
-            logger.debug("Added model's tool use message to conversation")
-
-            # Process tool use requests
-            tool_requests = response["output"]["message"]["content"]
-            logger.info(f"Processing {len(tool_requests)} tool requests")
-
-            for req_idx, tool_request in enumerate(tool_requests):
-                if "toolUse" not in tool_request:
-                    logger.debug(
-                        f"Tool request {req_idx + 1} is not a tool use, skipping"
-                    )
-                    continue
-
-                tool = tool_request["toolUse"]
-                tool_name = tool.get("name", "")
-                tool_input = tool.get("input", {})
-                tool_use_id = tool.get("toolUseId", "")
-
-                logger.info(
-                    f"Executing tool {req_idx + 1}: {tool_name} (ID: {tool_use_id})"
-                )
-                logger.debug(f"Tool input: {json.dumps(tool_input, default=str)}")
-
-                # Execute the tool
-                tool_result = {}
-                try:
-                    # Extract tool ID from tool name for execution
-                    if tool_name.startswith("custom_tool_"):
-                        tool_id = tool_name.replace("custom_tool_", "")
-
-                        # Find the tool info to get the correct pythonCodeKey and requirementsKey
-                        tool_code_key = (
-                            f"tools/lambda/shared/lambda_{tool_id}.py"  # fallback
-                        )
-                        requirements_key = None
-                        for tool_info in tools_data:
-                            if tool_info.get("id") == tool_id:
-                                tool_code_key = tool_info.get(
-                                    "pythonCodeKey", tool_code_key
-                                )
-                                requirements_key = tool_info.get("requirementsKey")
-                                break
-
-                        logger.debug(f"Using tool code key: {tool_code_key}")
-                        if requirements_key:
-                            logger.debug(f"Using requirements key: {requirements_key}")
-
-                        # Validate tool_input before passing to execute_custom_tool
-                        if not isinstance(tool_input, dict):
-                            logger.warning(
-                                f"Tool input is not a dict for {tool_name}: type={type(tool_input)}, value={tool_input}"
-                            )
-                            tool_input = (
-                                {} if tool_input is None else {"input": tool_input}
-                            )
-
-                        execution_result = execute_custom_tool(
-                            tool_name,
-                            tool_code_key,
-                            tool_input,
-                            requirements_key,
-                        )
-
-                        if execution_result.get("success", False):
-                            tool_result = {
-                                "toolUseId": tool_use_id,
-                                "content": [
-                                    {"json": execution_result.get("result", {})}
-                                ],
-                            }
-                            logger.info(f"Tool {tool_name} executed successfully")
-                        else:
-                            error_msg = execution_result.get(
-                                "error", "Tool execution failed"
-                            )
-                            tool_result = {
-                                "toolUseId": tool_use_id,
-                                "content": [{"text": error_msg}],
-                                "status": "error",
-                            }
-                            logger.error(
-                                f"Tool {tool_name} execution failed: {error_msg}"
-                            )
-                    else:
-                        # Fallback for unknown tools
-                        error_msg = f"Unknown tool: {tool_name}"
-                        tool_result = {
-                            "toolUseId": tool_use_id,
-                            "content": [{"text": error_msg}],
-                            "status": "error",
-                        }
-                        logger.error(error_msg)
-
-                except Exception as e:
-                    error_msg = f"Tool execution error: {str(e)}"
-                    logger.error(error_msg)
-                    logger.debug(f"Tool execution traceback: {traceback.format_exc()}")
-                    tool_result = {
-                        "toolUseId": tool_use_id,
-                        "content": [{"text": error_msg}],
-                        "status": "error",
-                    }
-
-                # Add tool result message following AWS pattern
-                tool_result_message = {
-                    "role": "user",
-                    "content": [{"toolResult": tool_result}],
-                }
-                bedrock_messages.append(tool_result_message)
-                logger.debug(f"Added tool result for {tool_name} to conversation")
-
-            # Send the tool results back to the model
-            logger.info("Sending tool results back to model for final response")
-            final_converse_params = converse_params.copy()
-            final_converse_params["messages"] = bedrock_messages
-
-            try:
-                response = bedrock_client.converse(**final_converse_params)
-                logger.info("Final Bedrock API call successful")
-            except Exception as e:
-                logger.error(f"Final Bedrock API call failed: {str(e)}")
-                raise
-
-        # Extract response text from Converse API (final response after tool use or direct response)
+        # Extract response text from Converse API
         response_text = ""
         output_message = response.get("output", {}).get("message", {})
         content = output_message.get("content", [])

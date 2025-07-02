@@ -64,11 +64,7 @@ import {
   Message,
   SystemPrompt,
   Database as DatabaseType,
-  Tool,
   Template,
-  normalizeToolParameters,
-  validateTool,
-  validateToolParameter,
 } from "@/lib/types";
 
 import type { Schema } from "../../../amplify/data/resource";
@@ -94,15 +90,12 @@ export default function ChatPage() {
   const { setHeaderProps } = useHeader();
   const [systemPrompt, setSystemPrompt] = useState<string>("default");
   const [selectedDatabases, setSelectedDatabases] = useState<string[]>([]);
-  const [selectedTools, setSelectedTools] = useState<string[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string>("none");
   const [selectedModelId, setSelectedModelId] = useState<string>(
     "apac.anthropic.claude-sonnet-4-20250514-v1:0"
   );
-  const [forceToolUse, setForceToolUse] = useState<boolean>(false);
   const [systemPrompts, setSystemPrompts] = useState<SystemPrompt[]>([]);
   const [customDatabases, setCustomDatabases] = useState<DatabaseType[]>([]);
-  const [customTools, setCustomTools] = useState<Tool[]>([]);
   const [customTemplates, setCustomTemplates] = useState<Template[]>([]);
   const [showTemplateCreator, setShowTemplateCreator] = useState(false);
   const [templateForm, setTemplateForm] = useState({
@@ -110,7 +103,6 @@ export default function ChatPage() {
     description: "",
     systemPrompt: "default",
     databases: [] as string[],
-    tools: [] as string[],
   });
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -165,75 +157,6 @@ export default function ChatPage() {
           console.log("⚠️ [ChatPage] No databases data received");
         }
 
-        // Load tools
-        console.log("🔧 [ChatPage] Loading tools...");
-        const { data: toolsData } = await client.models.tools.list();
-        if (toolsData) {
-          const tools: Tool[] = toolsData
-            .map((tool) => {
-              console.log(`🔧 [ChatPage] Processing tool: ${tool.name}`);
-
-              // Use the normalized parameter parsing function
-              const normalizedParameters = normalizeToolParameters(
-                tool.parameters
-              );
-
-              const processedTool: Tool = {
-                id: tool.id,
-                name: tool.name,
-                description: tool.description,
-                parameters: normalizedParameters,
-                pythonCodeKey: tool.pythonCodeKey,
-                requirementsKey: tool.requirementsKey || undefined,
-                isActive: tool.isActive || false,
-                createdAt: new Date(tool.createdAt),
-                owner: tool.owner || undefined,
-              };
-
-              // Validate the processed tool
-              if (!validateTool(processedTool)) {
-                console.error(
-                  `❌ [ChatPage] Tool validation failed for ${tool.name}:`,
-                  processedTool
-                );
-                return null;
-              }
-
-              console.log(
-                `✅ [ChatPage] Tool ${tool.name} processed successfully:`,
-                {
-                  id: processedTool.id,
-                  name: processedTool.name,
-                  parametersCount: processedTool.parameters.length,
-                  validParameters: processedTool.parameters.every(
-                    validateToolParameter
-                  ),
-                  pythonCodeKey: processedTool.pythonCodeKey,
-                  requirementsKey: processedTool.requirementsKey,
-                  isActive: processedTool.isActive,
-                }
-              );
-
-              return processedTool;
-            })
-            .filter((tool): tool is Tool => tool !== null);
-
-          setCustomTools(tools);
-          console.log(
-            `✅ [ChatPage] Loaded ${tools.length}/${toolsData.length} valid tools:`,
-            tools.map((t) => ({
-              id: t.id,
-              name: t.name,
-              parametersCount: t.parameters.length,
-              hasCodeKey: !!t.pythonCodeKey,
-              hasRequirements: !!t.requirementsKey,
-              isActive: t.isActive,
-            }))
-          );
-        } else {
-          console.log("⚠️ [ChatPage] No tools data received");
-        }
-
         // Load templates
         console.log("📋 [ChatPage] Loading templates...");
         const { data: templatesData } = await client.models.templates.list();
@@ -246,7 +169,6 @@ export default function ChatPage() {
             databases: Array.isArray(template.databaseIds)
               ? template.databaseIds
               : [],
-            tools: Array.isArray(template.toolIds) ? template.toolIds : [],
           }));
           setCustomTemplates(templates);
           console.log(
@@ -277,7 +199,6 @@ export default function ChatPage() {
           name: template.name,
           systemPrompt: template.systemPrompt,
           databases: template.databases,
-          tools: template.tools,
         });
 
         // Apply system prompt
@@ -299,7 +220,6 @@ export default function ChatPage() {
         }
 
         setSelectedDatabases(template.databases);
-        setSelectedTools(template.tools);
         console.log(
           `✅ [ChatPage] Template applied successfully: ${template.name}`
         );
@@ -322,9 +242,7 @@ export default function ChatPage() {
       console.log("🔄 [ChatPage] Clearing template selections");
       setSystemPrompt("default");
       setSelectedDatabases([]);
-      setSelectedTools([]);
       setSelectedModelId("apac.anthropic.claude-sonnet-4-20250514-v1:0"); // Reset to default model
-      setForceToolUse(false); // Reset force tool use
       console.log("✅ [ChatPage] Template selections cleared");
       toast.info("Template cleared");
     }
@@ -354,20 +272,7 @@ export default function ChatPage() {
             </TooltipContent>
           </Tooltip>
         )}
-        {selectedTools.length > 0 && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge variant="secondary" className="text-xs cursor-pointer">
-                <Wrench className="h-3 w-3 mr-1" />
-                {selectedTools.length} Tool
-                {selectedTools.length > 1 ? "s" : ""}
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Active tools: {selectedTools.join(", ")}</p>
-            </TooltipContent>
-          </Tooltip>
-        )}
+
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="ghost" size="icon">
@@ -393,7 +298,7 @@ export default function ChatPage() {
         </Popover>
       </div>
     ),
-    [selectedDatabases, selectedTools, clearChat]
+    [selectedDatabases, clearChat]
   );
 
   // Memoize description to prevent unnecessary re-renders
@@ -556,7 +461,6 @@ export default function ChatPage() {
       console.log(`💭 [ChatPage] Preparing request:`, {
         totalMessages: messages.length,
         selectedDatabases: selectedDatabases.length,
-        selectedTools: selectedTools.length,
       });
 
       // Validate message content before sending to Bedrock
@@ -593,19 +497,6 @@ export default function ChatPage() {
         }),
       });
 
-      // Debug: Log Tools configuration
-      console.log("🔧 [ChatPage] Tools Configuration Debug:", {
-        selectedTools,
-        selectedToolsCount: selectedTools.length,
-        selectedToolsType: typeof selectedTools,
-        isArrayEmpty:
-          Array.isArray(selectedTools) && selectedTools.length === 0,
-        toolNames: selectedTools.map((id) => {
-          const tool = customTools.find((t) => t.id === id);
-          return tool ? tool.name : `Unknown(${id})`;
-        }),
-      });
-
       const requestPayload = {
         messages: validMessages.map((msg) => ({
           role: msg.role,
@@ -615,72 +506,7 @@ export default function ChatPage() {
         systemPrompt: systemPromptContent,
         modelId: selectedModelId,
         databaseIds: selectedDatabases, // Add selected databases for RAG
-        toolIds: selectedTools, // Add selected tools for agent functionality
-        forceToolUse: forceToolUse && selectedTools.length > 0, // Force tool use if enabled and tools are selected
-        toolsData: (() => {
-          const validToolData = [];
-          for (const toolId of selectedTools) {
-            const tool = customTools.find((t) => t.id === toolId);
-            if (!tool) {
-              console.warn(`⚠️ [ChatPage] Tool not found for ID: ${toolId}`);
-              continue;
-            }
-
-            const isValid = validateTool(tool);
-            console.log(`🔧 [ChatPage] Preparing tool data for ${tool.name}:`, {
-              id: tool.id,
-              name: tool.name,
-              parametersCount: tool.parameters.length,
-              isValid,
-            });
-
-            // Validate the tool data before sending
-            if (!isValid) {
-              console.error(`❌ [ChatPage] Tool validation failed`);
-              continue;
-            }
-
-            // Use validated tool data structure
-            const toolData = {
-              id: tool.id,
-              name: tool.name,
-              description: tool.description,
-              parameters: tool.parameters, // Already normalized and validated
-              pythonCodeKey: tool.pythonCodeKey,
-              requirementsKey: tool.requirementsKey || undefined,
-            };
-
-            console.log(`✅ [ChatPage] Tool data prepared for ${tool.name}:`, {
-              id: toolData.id,
-              parametersCount: toolData.parameters.length,
-              validParameters: toolData.parameters.every(validateToolParameter),
-              hasPythonCode: !!toolData.pythonCodeKey,
-              hasRequirements: !!toolData.requirementsKey,
-            });
-
-            validToolData.push(toolData);
-          }
-          return validToolData;
-        })(),
       };
-
-      console.log("🔧 [ChatPage] Tool Data Debug:", {
-        selectedToolsIds: selectedTools,
-        customToolsAvailable: customTools.length,
-        customToolsList: customTools.map((t) => ({
-          id: t.id,
-          name: t.name,
-          hasParameters: !!t.parameters,
-          parametersCount: Array.isArray(t.parameters)
-            ? t.parameters.length
-            : 0,
-          parametersType: typeof t.parameters,
-          hasPythonCodeKey: !!t.pythonCodeKey,
-          hasRequirementsKey: !!t.requirementsKey,
-        })),
-        toolsDataCount: requestPayload.toolsData.length,
-        // Avoid logging complex nested objects that might cause serialization issues
-      });
 
       console.log("📤 [ChatPage] Calling Bedrock function with payload:", {
         messageCount: requestPayload.messages.length,
@@ -693,9 +519,7 @@ export default function ChatPage() {
         selectedModel:
           AVAILABLE_MODELS.find((m) => m.id === selectedModelId)?.name ||
           "Unknown",
-        forceToolUse: requestPayload.forceToolUse,
-        toolsCount: selectedTools.length,
-        toolsDataCount: requestPayload.toolsData.length,
+
         // fullPayload: requestPayload, // Log the full payload for debugging (commented out to reduce noise)
       });
 
@@ -706,9 +530,6 @@ export default function ChatPage() {
         systemPromptLength: requestPayload.systemPrompt.length,
         modelId: requestPayload.modelId,
         databaseIdsCount: requestPayload.databaseIds.length,
-        toolIdsCount: requestPayload.toolIds.length,
-        toolsDataCount: requestPayload.toolsData.length,
-        forceToolUse: requestPayload.forceToolUse,
       });
 
       try {
@@ -1085,27 +906,6 @@ export default function ChatPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                {/* Force Tool Use Toggle */}
-                {selectedTools.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      id="force-tool-use"
-                      checked={forceToolUse}
-                      onCheckedChange={(checked) => {
-                        console.log(
-                          `🔧 [ChatPage] Force tool use changed: ${forceToolUse} -> ${checked}`
-                        );
-                        setForceToolUse(checked);
-                      }}
-                    />
-                    <Label
-                      htmlFor="force-tool-use"
-                      className="text-sm font-medium text-muted-foreground cursor-pointer"
-                    >
-                      Force Tool Use
-                    </Label>
-                  </div>
-                )}
               </div>
             )}
 
@@ -1259,79 +1059,6 @@ export default function ChatPage() {
                         {customDatabases.length === 0 && (
                           <div className="text-sm text-muted-foreground">
                             No databases available
-                          </div>
-                        )}
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs font-medium text-muted-foreground">
-                    Tools
-                  </Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="h-8 text-xs justify-start"
-                      >
-                        {selectedTools.length > 0
-                          ? `${selectedTools.length} selected`
-                          : "Select tools"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-56">
-                      <div className="space-y-2">
-                        <div className="text-sm font-medium">Select Tools</div>
-                        {customTools.map((tool) => (
-                          <div
-                            key={tool.id}
-                            className="flex items-center space-x-2"
-                          >
-                            <input
-                              type="checkbox"
-                              id={`tool-${tool.id}`}
-                              checked={selectedTools.includes(tool.id)}
-                              onChange={(e) => {
-                                console.log(
-                                  `🔧 [ChatPage] Tool ${e.target.checked ? "selected" : "deselected"}: ${tool.name}`
-                                );
-                                if (e.target.checked) {
-                                  setSelectedTools((prev) => {
-                                    const newSelection = [...prev, tool.id];
-                                    console.log(
-                                      `🔧 [ChatPage] Updated tool selection:`,
-                                      newSelection
-                                    );
-                                    return newSelection;
-                                  });
-                                } else {
-                                  setSelectedTools((prev) => {
-                                    const newSelection = prev.filter(
-                                      (id) => id !== tool.id
-                                    );
-                                    console.log(
-                                      `🔧 [ChatPage] Updated tool selection:`,
-                                      newSelection
-                                    );
-                                    return newSelection;
-                                  });
-                                }
-                              }}
-                              className="rounded border-border"
-                            />
-                            <label
-                              htmlFor={`tool-${tool.id}`}
-                              className="text-sm"
-                            >
-                              {tool.name}
-                            </label>
-                          </div>
-                        ))}
-                        {customTools.length === 0 && (
-                          <div className="text-sm text-muted-foreground">
-                            No tools available
                           </div>
                         )}
                       </div>
@@ -1564,23 +1291,6 @@ export default function ChatPage() {
                           </Badge>
                         ))
                       : "No databases selected"}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Selected Tools</Label>
-                  <div className="text-sm text-muted-foreground">
-                    {selectedTools.length > 0
-                      ? selectedTools.map((tool) => (
-                          <Badge
-                            key={tool}
-                            variant="secondary"
-                            className="mr-1 mb-1"
-                          >
-                            {tool}
-                          </Badge>
-                        ))
-                      : "No tools selected"}
                   </div>
                 </div>
               </div>

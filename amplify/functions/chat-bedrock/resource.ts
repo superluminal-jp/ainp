@@ -2,10 +2,9 @@ import { execSync } from "node:child_process";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineFunction } from "@aws-amplify/backend";
-import { DockerImage, Duration, Stack } from "aws-cdk-lib";
+import { DockerImage, Duration } from "aws-cdk-lib";
 import { Code, Function, Runtime } from "aws-cdk-lib/aws-lambda";
 import { PolicyStatement, Effect } from "aws-cdk-lib/aws-iam";
-import { Bucket } from "aws-cdk-lib/aws-s3";
 
 const functionDir = path.dirname(fileURLToPath(import.meta.url));
 
