@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
+
 import { useState, useEffect } from "react";
 import {
   Plus,
@@ -64,6 +64,7 @@ export default function ToolsPage() {
     // Load tools from Amplify
     console.log("🚀 [ToolsPage] Component mounted, loading tools...");
     loadTools();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Filter tools based on search and filters
@@ -327,7 +328,7 @@ export default function ToolsPage() {
       setRequirementsTxt(importData.requirements || "");
       setValidationErrors({});
       showNotification("success", "Tool configuration imported successfully");
-    } catch (error) {
+    } catch {
       showNotification("error", "Failed to import tool configuration");
     }
 

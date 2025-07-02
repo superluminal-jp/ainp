@@ -5,19 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
-import { useState, useEffect, useRef } from "react";
-import { useSimpleHeader } from "@/components/use-page-header";
+import { useState, useEffect, useRef, useCallback } from "react";
+
 import { AppHeader } from "@/components/app-header";
 import {
   ArrowLeft,
@@ -37,7 +31,7 @@ import {
   ChevronRight,
   ChevronDown,
 } from "lucide-react";
-import Link from "next/link";
+
 import { uploadData, downloadData, remove, list } from "aws-amplify/storage";
 import type { Schema } from "../../../amplify/data/resource";
 import { generateClient } from "aws-amplify/data";
@@ -182,13 +176,14 @@ export default function DatabasesPage() {
   useEffect(() => {
     console.log("[DatabasesPage] Component initialized");
     fetchDatabases();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
    * Fetch all databases from the API
    * @returns {Promise<void>}
    */
-  const fetchDatabases = async (): Promise<void> => {
+  const fetchDatabases = useCallback(async (): Promise<void> => {
     try {
       console.log("[DatabasesPage] Fetching databases...");
       const { data } = await client.models.databases.list();
@@ -201,7 +196,7 @@ export default function DatabasesPage() {
       console.error("[DatabasesPage] Error fetching databases:", error);
       addError(errorMessage);
     }
-  };
+  }, []);
 
   /**
    * Fetch files for a specific database
@@ -313,10 +308,12 @@ export default function DatabasesPage() {
 
   /**
    * Build hierarchical folder structure from flat file list
-   * @param {any[]} files - Array of file objects from storage
+   * @param {Array<{path: string; lastModified?: Date; size?: number}>} files - Array of file objects from storage
    * @returns {FolderStructure} Hierarchical folder structure
    */
-  const buildFolderStructure = (files: any[]): FolderStructure => {
+  const buildFolderStructure = (
+    files: Array<{ path: string; lastModified?: Date; size?: number }>
+  ): FolderStructure => {
     console.log("[DatabasesPage] Building folder structure from files");
     const root: FolderStructure = {
       name: "databases",
@@ -1191,7 +1188,7 @@ export default function DatabasesPage() {
         {/* Error Display */}
         {errors.length > 0 && (
           <div className="border-b border-border">
-            {errors.slice(-3).map((error, index) => (
+            {errors.slice(-3).map((error) => (
               <div
                 key={error.timestamp.getTime()}
                 className={`px-4 py-2 text-sm ${
@@ -1839,7 +1836,7 @@ export default function DatabasesPage() {
                                 </h3>
                                 <Switch
                                   checked={database.isActive ?? true}
-                                  onCheckedChange={(checked) => {
+                                  onCheckedChange={() => {
                                     toggleDatabaseActive(database.id);
                                   }}
                                   onClick={(e) => e.stopPropagation()}

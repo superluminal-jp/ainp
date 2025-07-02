@@ -34,7 +34,6 @@ import {
   X,
   Copy,
   Check,
-  Plus,
   Database,
   MessageSquare,
   Wrench,
@@ -635,7 +634,7 @@ export default function TemplatesPage() {
               Template Details
             </DialogTitle>
             <DialogDescription>
-              Complete configuration for "{viewingTemplate?.name}"
+              Complete configuration for &quot;{viewingTemplate?.name}&quot;
             </DialogDescription>
           </DialogHeader>
 

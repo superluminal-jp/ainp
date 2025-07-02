@@ -41,7 +41,7 @@ import {
 import { toast } from "sonner";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useHeader } from "@/components/header-context";
-import { useSidebar } from "@/components/ui/sidebar";
+
 import { AppHeader } from "@/components/app-header";
 import {
   Send,
@@ -66,11 +66,9 @@ import {
   Database as DatabaseType,
   Tool,
   Template,
-  ToolParameter,
   normalizeToolParameters,
   validateTool,
   validateToolParameter,
-  createBedrockToolSpec,
 } from "@/lib/types";
 
 import type { Schema } from "../../../amplify/data/resource";
@@ -94,7 +92,6 @@ const AVAILABLE_MODELS = [
 
 export default function ChatPage() {
   const { setHeaderProps } = useHeader();
-  const { state, isMobile } = useSidebar();
   const [systemPrompt, setSystemPrompt] = useState<string>("default");
   const [selectedDatabases, setSelectedDatabases] = useState<string[]>([]);
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
@@ -819,13 +816,13 @@ export default function ChatPage() {
       if (error && typeof error === "object" && "graphQLErrors" in error) {
         console.error(
           "❌ [ChatPage] GraphQL Errors:",
-          (error as any).graphQLErrors
+          (error as { graphQLErrors: unknown }).graphQLErrors
         );
       }
       if (error && typeof error === "object" && "networkError" in error) {
         console.error(
           "❌ [ChatPage] Network Error:",
-          (error as any).networkError
+          (error as { networkError: unknown }).networkError
         );
       }
 

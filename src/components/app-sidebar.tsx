@@ -1,14 +1,7 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
@@ -20,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Label } from "@/components/ui/label";
+
 import {
   Sidebar,
   SidebarContent,
@@ -30,7 +23,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
 } from "@/components/ui/sidebar";
-import { useState, useEffect } from "react";
+
 import { useAuthenticator } from "@aws-amplify/ui-react";
 import { useRouter, usePathname } from "next/navigation";
 import {
@@ -39,48 +32,10 @@ import {
   Wrench,
   FileText,
   Zap,
-  Settings,
   Home,
   Sparkles,
-  Bot,
   Code,
 } from "lucide-react";
-
-interface SustomPrompt {
-  id: string;
-  name: string;
-  content: string;
-  isActive: boolean;
-}
-
-interface CustomDatabase {
-  id: string;
-  name: string;
-  description: string;
-  type: "docs" | "code" | "wiki" | "papers" | "custom";
-  connectionString: string;
-  isActive: boolean;
-  vectorDimensions: number;
-  indexType: "flat" | "hnsw" | "ivf";
-}
-
-interface CustomTool {
-  id: string;
-  name: string;
-  description: string;
-  category: "web" | "code" | "file" | "calc" | "custom";
-  endpoint?: string;
-  isActive: boolean;
-}
-
-interface Template {
-  id: string;
-  name: string;
-  description: string;
-  systemPrompt: string;
-  databases: string[];
-  tools: string[];
-}
 
 // Navigation items for the sidebar
 const navigationItems = [

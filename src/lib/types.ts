@@ -38,7 +38,7 @@ export interface ToolParameter {
   type: "string" | "number" | "boolean" | "array" | "object";
   description: string;
   required: boolean;
-  defaultValue?: any;
+  defaultValue?: unknown;
 }
 
 export interface Template {
@@ -67,7 +67,7 @@ export interface BedrockToolSpec {
     inputSchema?: {
       json: {
         type: "object";
-        properties: Record<string, any>;
+        properties: Record<string, unknown>;
         required?: string[];
         additionalProperties?: boolean;
       };
@@ -76,37 +76,43 @@ export interface BedrockToolSpec {
 }
 
 // バリデーション関数
-export function validateToolParameter(param: any): param is ToolParameter {
+export function validateToolParameter(param: unknown): param is ToolParameter {
   return (
-    param &&
+    param !== null &&
+    param !== undefined &&
     typeof param === "object" &&
-    typeof param.id === "string" &&
-    typeof param.name === "string" &&
-    param.name.trim().length > 0 &&
-    ["string", "number", "boolean", "array", "object"].includes(param.type) &&
-    typeof param.description === "string" &&
-    typeof param.required === "boolean"
+    typeof (param as ToolParameter).id === "string" &&
+    typeof (param as ToolParameter).name === "string" &&
+    (param as ToolParameter).name.trim().length > 0 &&
+    ["string", "number", "boolean", "array", "object"].includes(
+      (param as ToolParameter).type
+    ) &&
+    typeof (param as ToolParameter).description === "string" &&
+    typeof (param as ToolParameter).required === "boolean"
   );
 }
 
-export function validateTool(tool: any): tool is Tool {
+export function validateTool(tool: unknown): tool is Tool {
   return (
-    tool &&
+    tool !== null &&
+    tool !== undefined &&
     typeof tool === "object" &&
-    typeof tool.id === "string" &&
-    typeof tool.name === "string" &&
-    tool.name.trim().length > 0 &&
-    typeof tool.description === "string" &&
-    tool.description.trim().length > 0 &&
-    Array.isArray(tool.parameters) &&
-    tool.parameters.every(validateToolParameter) &&
-    typeof tool.pythonCodeKey === "string" &&
-    tool.pythonCodeKey.trim().length > 0 &&
-    typeof tool.isActive === "boolean"
+    typeof (tool as Tool).id === "string" &&
+    typeof (tool as Tool).name === "string" &&
+    (tool as Tool).name.trim().length > 0 &&
+    typeof (tool as Tool).description === "string" &&
+    (tool as Tool).description.trim().length > 0 &&
+    Array.isArray((tool as Tool).parameters) &&
+    (tool as Tool).parameters.every(validateToolParameter) &&
+    typeof (tool as Tool).pythonCodeKey === "string" &&
+    (tool as Tool).pythonCodeKey.trim().length > 0 &&
+    typeof (tool as Tool).isActive === "boolean"
   );
 }
 
-export function normalizeToolParameters(rawParameters: any): ToolParameter[] {
+export function normalizeToolParameters(
+  rawParameters: unknown
+): ToolParameter[] {
   console.log("🔧 [Types] Normalizing tool parameters:", {
     input: rawParameters,
     type: typeof rawParameters,
@@ -118,8 +124,8 @@ export function normalizeToolParameters(rawParameters: any): ToolParameter[] {
     return [];
   }
 
-  let params: any[] = [];
-  
+  let params: unknown[] = [];
+
   // Handle different input formats
   if (typeof rawParameters === "string") {
     try {
@@ -131,53 +137,74 @@ export function normalizeToolParameters(rawParameters: any): ToolParameter[] {
   } else if (Array.isArray(rawParameters)) {
     params = rawParameters;
   } else {
-    console.warn("⚠️ [Types] Parameters is not string or array:", typeof rawParameters);
+    console.warn(
+      "⚠️ [Types] Parameters is not string or array:",
+      typeof rawParameters
+    );
     return [];
   }
 
   if (!Array.isArray(params)) {
-    console.warn("⚠️ [Types] Parsed parameters is not an array:", typeof params);
+    console.warn(
+      "⚠️ [Types] Parsed parameters is not an array:",
+      typeof params
+    );
     return [];
   }
 
   const normalized = params
     .map((param, index) => {
       console.log(`🔧 [Types] Processing parameter ${index + 1}:`, param);
-      
+
       if (!param || typeof param !== "object") {
         console.warn(`⚠️ [Types] Parameter ${index + 1} is invalid:`, param);
         return null;
       }
 
+      const p = param as Record<string, unknown>;
+
       const normalized: ToolParameter = {
-        id: param.id || `param_${index}_${Date.now()}`,
-        name: (param.name || "").trim(),
-        type: ["string", "number", "boolean", "array", "object"].includes(param.type) 
-          ? param.type 
+        id: typeof p.id === "string" ? p.id : `param_${index}_${Date.now()}`,
+        name: (typeof p.name === "string" ? p.name : "").trim(),
+        type: ["string", "number", "boolean", "array", "object"].includes(
+          p.type as string
+        )
+          ? (p.type as ToolParameter["type"])
           : "string",
-        description: (param.description || "").trim(),
-        required: Boolean(param.required),
-        defaultValue: param.defaultValue !== undefined ? param.defaultValue : undefined,
+        description: (typeof p.description === "string"
+          ? p.description
+          : ""
+        ).trim(),
+        required: Boolean(p.required),
+        defaultValue: p.defaultValue !== undefined ? p.defaultValue : undefined,
       };
 
       // Validate the normalized parameter
       if (!validateToolParameter(normalized)) {
-        console.warn(`⚠️ [Types] Parameter ${index + 1} failed validation:`, normalized);
+        console.warn(
+          `⚠️ [Types] Parameter ${index + 1} failed validation:`,
+          normalized
+        );
         return null;
       }
 
-      console.log(`✅ [Types] Parameter ${index + 1} normalized successfully:`, normalized);
+      console.log(
+        `✅ [Types] Parameter ${index + 1} normalized successfully:`,
+        normalized
+      );
       return normalized;
     })
     .filter((param): param is ToolParameter => param !== null);
 
-  console.log(`🎉 [Types] Normalized ${normalized.length}/${params.length} parameters successfully`);
+  console.log(
+    `🎉 [Types] Normalized ${normalized.length}/${params.length} parameters successfully`
+  );
   return normalized;
 }
 
 export function createBedrockToolSpec(tool: Tool): BedrockToolSpec | null {
   console.log("🔧 [Types] Creating Bedrock tool spec for:", tool.name);
-  
+
   if (!validateTool(tool)) {
     console.error("❌ [Types] Tool validation failed:", tool);
     return null;
@@ -192,7 +219,7 @@ export function createBedrockToolSpec(tool: Tool): BedrockToolSpec | null {
 
   // Only add inputSchema if there are valid parameters
   if (tool.parameters.length > 0) {
-    const properties: Record<string, any> = {};
+    const properties: Record<string, unknown> = {};
     const required: string[] = [];
 
     tool.parameters.forEach((param) => {
@@ -202,13 +229,14 @@ export function createBedrockToolSpec(tool: Tool): BedrockToolSpec | null {
       }
 
       // Map tool parameter types to JSON schema types
-      const jsonType = {
-        string: "string",
-        number: "number", 
-        boolean: "boolean",
-        array: "array",
-        object: "object",
-      }[param.type] || "string";
+      const jsonType =
+        {
+          string: "string",
+          number: "number",
+          boolean: "boolean",
+          array: "array",
+          object: "object",
+        }[param.type] || "string";
 
       properties[param.name] = {
         type: jsonType,
@@ -219,7 +247,9 @@ export function createBedrockToolSpec(tool: Tool): BedrockToolSpec | null {
         required.push(param.name);
       }
 
-      console.log(`✅ [Types] Added parameter ${param.name} (type: ${jsonType}, required: ${param.required})`);
+      console.log(
+        `✅ [Types] Added parameter ${param.name} (type: ${jsonType}, required: ${param.required})`
+      );
     });
 
     if (Object.keys(properties).length > 0) {
@@ -231,12 +261,17 @@ export function createBedrockToolSpec(tool: Tool): BedrockToolSpec | null {
           additionalProperties: false,
         },
       };
-      console.log(`✅ [Types] Created input schema with ${Object.keys(properties).length} properties`);
+      console.log(
+        `✅ [Types] Created input schema with ${Object.keys(properties).length} properties`
+      );
     }
   } else {
     console.log("ℹ️ [Types] Tool has no parameters, omitting inputSchema");
   }
 
-  console.log("🎉 [Types] Bedrock tool spec created successfully:", JSON.stringify(toolSpec, null, 2));
+  console.log(
+    "🎉 [Types] Bedrock tool spec created successfully:",
+    JSON.stringify(toolSpec, null, 2)
+  );
   return toolSpec;
 }
