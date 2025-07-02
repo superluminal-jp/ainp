@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineFunction } from "@aws-amplify/backend";
 import { DockerImage, Duration, Stack } from "aws-cdk-lib";
-import { Code, Function, Runtime, LayerVersion } from "aws-cdk-lib/aws-lambda";
+import { Code, Function, Runtime } from "aws-cdk-lib/aws-lambda";
 import { PolicyStatement, Effect } from "aws-cdk-lib/aws-iam";
 import { Bucket } from "aws-cdk-lib/aws-s3";
 
@@ -19,13 +19,6 @@ export const embedFilesFunction = defineFunction(
       environment: {
         FAISS_INDEX_PREFIX: "faiss-indexes",
       },
-      layers: [
-        LayerVersion.fromLayerVersionArn(
-          scope,
-          "AWSSDKPandasLayer",
-          `arn:aws:lambda:${Stack.of(scope).region}:336392948345:layer:AWSSDKPandas-Python312:13`
-        ),
-      ],
       code: Code.fromAsset(functionDir, {
         bundling: {
           image: DockerImage.fromRegistry("dummy"),
