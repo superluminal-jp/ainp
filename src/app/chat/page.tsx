@@ -24,7 +24,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Toggle } from "@/components/ui/toggle";
-import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import {
   Tooltip,
@@ -48,7 +47,6 @@ import {
   Paperclip,
   X,
   Database,
-  Wrench,
   Settings,
   MessageSquare,
   Clock,
