@@ -62,11 +62,18 @@ export default function ToolsPage() {
 
   useEffect(() => {
     // Load tools from Amplify
+    console.log("🚀 [ToolsPage] Component mounted, loading tools...");
     loadTools();
   }, []);
 
   // Filter tools based on search and filters
   useEffect(() => {
+    console.log("🔍 [ToolsPage] Filtering tools:", {
+      totalTools: customTools.length,
+      searchQuery,
+      statusFilter,
+    });
+
     let filtered = customTools;
 
     // Search filter
@@ -76,6 +83,10 @@ export default function ToolsPage() {
           tool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           tool.description.toLowerCase().includes(searchQuery.toLowerCase())
       );
+      console.log("🔍 [ToolsPage] After search filter:", {
+        searchQuery,
+        remaining: filtered.length,
+      });
     }
 
     // Status filter
@@ -83,35 +94,103 @@ export default function ToolsPage() {
       filtered = filtered.filter((tool) =>
         statusFilter === "active" ? tool.isActive : !tool.isActive
       );
+      console.log("🔍 [ToolsPage] After status filter:", {
+        statusFilter,
+        remaining: filtered.length,
+      });
     }
+
+    console.log("🔍 [ToolsPage] Final filtered tools:", {
+      total: customTools.length,
+      filtered: filtered.length,
+      tools: filtered.map((t) => ({ name: t.name, isActive: t.isActive })),
+    });
 
     setFilteredTools(filtered);
   }, [customTools, searchQuery, statusFilter]);
 
   const showNotification = (type: "success" | "error", message: string) => {
+    console.log(`🔔 [ToolsPage] Showing notification:`, { type, message });
     setNotification({ type, message });
-    setTimeout(() => setNotification(null), 3000);
+    setTimeout(() => {
+      console.log(`🔔 [ToolsPage] Hiding notification:`, { type, message });
+      setNotification(null);
+    }, 3000);
   };
 
   const loadTools = async () => {
+    console.log("🔧 [ToolsPage] Loading tools from database...");
     try {
       const { data: tools } = await client.models.tools.list();
-      const formattedTools: Tool[] = tools.map((tool) => ({
-        id: tool.id,
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters
-          ? JSON.parse(tool.parameters as string)
-          : [],
-        pythonCodeKey: tool.pythonCodeKey,
-        requirementsKey: tool.requirementsKey || undefined,
-        isActive: Boolean(tool.isActive ?? true),
-        createdAt: new Date(tool.createdAt),
-        owner: tool.owner || undefined,
-      }));
+      console.log("🔧 [ToolsPage] Raw tools data received:", {
+        count: tools?.length || 0,
+        rawData: tools,
+      });
+
+      const formattedTools: Tool[] = tools.map((tool, index) => {
+        console.log(
+          `🔧 [ToolsPage] Processing tool ${index + 1}/${tools.length}: ${tool.name}`
+        );
+
+        // Parameters parsing with detailed logging
+        let parsedParameters = [];
+        try {
+          if (tool.parameters) {
+            console.log(`🔧 [ToolsPage] Tool ${tool.name} parameters raw:`, {
+              type: typeof tool.parameters,
+              value: tool.parameters,
+              stringValue: String(tool.parameters),
+            });
+
+            parsedParameters = JSON.parse(tool.parameters as string);
+            console.log(`🔧 [ToolsPage] Tool ${tool.name} parameters parsed:`, {
+              count: parsedParameters.length,
+              parameters: parsedParameters,
+            });
+          } else {
+            console.log(`🔧 [ToolsPage] Tool ${tool.name} has no parameters`);
+          }
+        } catch (error) {
+          console.error(
+            `❌ [ToolsPage] Error parsing parameters for tool ${tool.name}:`,
+            {
+              error: error,
+              rawParameters: tool.parameters,
+            }
+          );
+          parsedParameters = [];
+        }
+
+        const formattedTool = {
+          id: tool.id,
+          name: tool.name,
+          description: tool.description,
+          parameters: parsedParameters,
+          pythonCodeKey: tool.pythonCodeKey,
+          requirementsKey: tool.requirementsKey || undefined,
+          isActive: Boolean(tool.isActive ?? true),
+          createdAt: new Date(tool.createdAt),
+          owner: tool.owner || undefined,
+        };
+
+        console.log(`✅ [ToolsPage] Tool ${tool.name} formatted:`, {
+          id: formattedTool.id,
+          name: formattedTool.name,
+          parametersCount: formattedTool.parameters.length,
+          hasCodeKey: !!formattedTool.pythonCodeKey,
+          hasRequirements: !!formattedTool.requirementsKey,
+          isActive: formattedTool.isActive,
+        });
+
+        return formattedTool;
+      });
+
       setCustomTools(formattedTools);
+      console.log(
+        `🎉 [ToolsPage] Successfully loaded ${formattedTools.length} tools`
+      );
     } catch (error) {
-      console.error("Error loading tools:", error);
+      console.error("❌ [ToolsPage] Error loading tools:", error);
       showNotification("error", "Failed to load tools");
     }
   };
@@ -124,7 +203,12 @@ export default function ToolsPage() {
       description: "",
       required: false,
     };
+    console.log("➕ [ToolsPage] Adding new parameter:", newParam);
     setParameters([...parameters, newParam]);
+    console.log(
+      "➕ [ToolsPage] Total parameters after add:",
+      parameters.length + 1
+    );
   };
 
   const updateParameter = (
@@ -132,39 +216,73 @@ export default function ToolsPage() {
     field: keyof ToolParameter,
     value: string | boolean
   ) => {
-    setParameters((prev) =>
-      prev.map((param) =>
+    console.log("✏️ [ToolsPage] Updating parameter:", { id, field, value });
+    setParameters((prev) => {
+      const updated = prev.map((param) =>
         param.id === id ? { ...param, [field]: value } : param
-      )
-    );
+      );
+      console.log("✏️ [ToolsPage] Updated parameters:", updated);
+      return updated;
+    });
   };
 
   const removeParameter = (id: string) => {
-    setParameters((prev) => prev.filter((param) => param.id !== id));
+    console.log("🗑️ [ToolsPage] Removing parameter:", id);
+    setParameters((prev) => {
+      const filtered = prev.filter((param) => param.id !== id);
+      console.log("🗑️ [ToolsPage] Parameters after removal:", {
+        removed: id,
+        remaining: filtered.length,
+        parameters: filtered,
+      });
+      return filtered;
+    });
   };
 
   const validateForm = () => {
+    console.log("✅ [ToolsPage] Starting form validation...");
     const errors: { [key: string]: string } = {};
 
+    // Basic form validation
     if (!formData.name.trim()) {
       errors.name = "Tool name is required";
+      console.log("❌ [ToolsPage] Validation error: name is empty");
     }
     if (!formData.description.trim()) {
       errors.description = "Description is required";
+      console.log("❌ [ToolsPage] Validation error: description is empty");
     }
     if (!pythonCode.trim()) {
       errors.pythonCode = "Python code is required";
+      console.log("❌ [ToolsPage] Validation error: Python code is empty");
     }
 
     // Validate parameters
+    console.log("✅ [ToolsPage] Validating parameters:", {
+      count: parameters.length,
+      parameters: parameters,
+    });
+
     parameters.forEach((param, index) => {
+      console.log(`✅ [ToolsPage] Validating parameter ${index + 1}:`, param);
+
       if (!param.name.trim()) {
         errors[`param_${index}_name`] = "Parameter name is required";
+        console.log(`❌ [ToolsPage] Parameter ${index + 1} name is empty`);
       }
       if (!param.description.trim()) {
         errors[`param_${index}_description`] =
           "Parameter description is required";
+        console.log(
+          `❌ [ToolsPage] Parameter ${index + 1} description is empty`
+        );
       }
+    });
+
+    console.log("✅ [ToolsPage] Validation completed:", {
+      errorCount: Object.keys(errors).length,
+      errors: errors,
+      isValid: Object.keys(errors).length === 0,
     });
 
     setValidationErrors(errors);
@@ -300,42 +418,106 @@ export default function ToolsPage() {
   };
 
   const handleAddTool = async () => {
+    console.log("🔨 [ToolsPage] Starting tool creation process...");
+    console.log("🔨 [ToolsPage] Form data:", {
+      name: formData.name,
+      description: formData.description,
+      nameLength: formData.name.length,
+      descriptionLength: formData.description.length,
+    });
+    console.log("🔨 [ToolsPage] Parameters:", {
+      count: parameters.length,
+      parameters: parameters,
+      validParameters: parameters.filter((p) => p.name.trim()),
+    });
+    console.log("🔨 [ToolsPage] Code:", {
+      codeLength: pythonCode.length,
+      hasCode: !!pythonCode.trim(),
+      requirementsLength: requirementsTxt.length,
+      hasRequirements: !!requirementsTxt.trim(),
+    });
+
     if (!validateForm()) {
+      console.log("❌ [ToolsPage] Form validation failed");
       showNotification("error", "Please fix validation errors");
       return;
     }
 
+    console.log("✅ [ToolsPage] Form validation passed");
     setIsSaving(true);
+
     try {
       const toolId = Date.now().toString();
-      const pythonCodeKey = await uploadPythonCode(pythonCode, toolId);
+      console.log("🔨 [ToolsPage] Generated tool ID:", toolId);
 
+      // Upload Python code
+      console.log("🔨 [ToolsPage] Uploading Python code...");
+      const pythonCodeKey = await uploadPythonCode(pythonCode, toolId);
+      console.log("✅ [ToolsPage] Python code uploaded:", pythonCodeKey);
+
+      // Upload requirements if provided
       let requirementsKey: string | undefined;
       if (requirementsTxt.trim()) {
+        console.log("🔨 [ToolsPage] Uploading requirements.txt...");
         requirementsKey = await uploadRequirementsTxt(requirementsTxt, toolId);
+        console.log("✅ [ToolsPage] Requirements uploaded:", requirementsKey);
+      } else {
+        console.log("ℹ️ [ToolsPage] No requirements.txt to upload");
       }
 
-      await client.models.tools.create({
+      // Filter and prepare parameters
+      const filteredParameters = parameters.filter((p) => p.name.trim());
+      console.log("🔨 [ToolsPage] Filtered parameters:", {
+        original: parameters.length,
+        filtered: filteredParameters.length,
+        parameters: filteredParameters,
+      });
+
+      // Stringify parameters for database storage
+      const parametersString = JSON.stringify(filteredParameters);
+      console.log("🔨 [ToolsPage] Parameters serialized:", {
+        stringLength: parametersString.length,
+        string: parametersString,
+      });
+
+      // Create tool in database
+      console.log("🔨 [ToolsPage] Creating tool in database...");
+      const toolData = {
         name: formData.name.trim(),
         description: formData.description.trim(),
-        parameters: JSON.stringify(parameters.filter((p) => p.name.trim())),
+        parameters: parametersString,
         pythonCodeKey,
         requirementsKey,
         isActive: true,
         createdAt: new Date().toISOString(),
-      });
+      };
+      console.log("🔨 [ToolsPage] Tool data to save:", toolData);
+
+      await client.models.tools.create(toolData);
+      console.log("✅ [ToolsPage] Tool created successfully in database");
 
       await loadTools();
       resetForm();
       showNotification("success", "Tool created successfully!");
+      console.log("🎉 [ToolsPage] Tool creation completed successfully");
     } catch (error) {
-      console.error("Error adding tool:", error);
+      console.error("❌ [ToolsPage] Error adding tool:", {
+        error: error,
+        message: error instanceof Error ? error.message : "Unknown error",
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       showNotification("error", "Failed to create tool");
     }
     setIsSaving(false);
   };
 
   const handleEditTool = async (tool: Tool) => {
+    console.log("✏️ [ToolsPage] Starting tool edit:", {
+      toolId: tool.id,
+      toolName: tool.name,
+      parametersCount: tool.parameters.length,
+    });
+
     setEditingTool(tool);
     setFormData({
       name: tool.name,
@@ -344,38 +526,71 @@ export default function ToolsPage() {
     setParameters(tool.parameters);
     setIsEditing(true);
 
+    console.log("✏️ [ToolsPage] Form populated with tool data:", {
+      formData: { name: tool.name, description: tool.description },
+      parameters: tool.parameters,
+    });
+
     // Load existing Python code
+    console.log(
+      "✏️ [ToolsPage] Loading Python code from S3:",
+      tool.pythonCodeKey
+    );
     try {
       const url = await getUrl({
         path: tool.pythonCodeKey,
       });
+      console.log("✏️ [ToolsPage] Got Python code URL:", url.url.toString());
+
       const response = await fetch(url.url.toString());
       const code = await response.text();
+      console.log("✏️ [ToolsPage] Python code loaded:", {
+        codeLength: code.length,
+        preview: code.substring(0, 100) + (code.length > 100 ? "..." : ""),
+      });
+
       setPythonCode(code);
     } catch (error) {
-      console.error("Error loading Python code:", error);
+      console.error("❌ [ToolsPage] Error loading Python code:", error);
       showNotification("error", "Failed to load Python code");
     }
 
     // Load existing requirements.txt if it exists
     if (tool.requirementsKey) {
+      console.log(
+        "✏️ [ToolsPage] Loading requirements.txt from S3:",
+        tool.requirementsKey
+      );
       try {
         const requirementsUrl = await getUrl({
           path: tool.requirementsKey,
         });
+        console.log(
+          "✏️ [ToolsPage] Got requirements.txt URL:",
+          requirementsUrl.url.toString()
+        );
+
         const requirementsResponse = await fetch(
           requirementsUrl.url.toString()
         );
         const requirements = await requirementsResponse.text();
+        console.log("✏️ [ToolsPage] Requirements.txt loaded:", {
+          requirementsLength: requirements.length,
+          requirements: requirements,
+        });
+
         setRequirementsTxt(requirements);
       } catch (error) {
-        console.error("Error loading requirements.txt:", error);
+        console.error("❌ [ToolsPage] Error loading requirements.txt:", error);
         showNotification("error", "Failed to load requirements.txt");
         setRequirementsTxt(""); // Set empty if failed to load
       }
     } else {
+      console.log("ℹ️ [ToolsPage] Tool has no requirements.txt file");
       setRequirementsTxt(""); // No requirements file exists
     }
+
+    console.log("✅ [ToolsPage] Tool edit setup completed");
   };
 
   const handleUpdateTool = async () => {
@@ -450,41 +665,79 @@ export default function ToolsPage() {
   };
 
   const handleDeleteTool = async (id: string, name: string) => {
+    console.log("🗑️ [ToolsPage] Delete tool requested:", { id, name });
+
     if (!window.confirm(`Are you sure you want to delete "${name}"?`)) {
+      console.log("🗑️ [ToolsPage] Delete cancelled by user");
       return;
     }
 
+    console.log("🗑️ [ToolsPage] Delete confirmed, proceeding...");
     try {
       await client.models.tools.delete({ id });
+      console.log("✅ [ToolsPage] Tool deleted from database:", { id, name });
+
       await loadTools();
       showNotification("success", "Tool deleted successfully");
+      console.log("🎉 [ToolsPage] Delete operation completed successfully");
     } catch (error) {
-      console.error("Error deleting tool:", error);
+      console.error("❌ [ToolsPage] Error deleting tool:", {
+        error: error,
+        toolId: id,
+        toolName: name,
+      });
       showNotification("error", "Failed to delete tool");
     }
   };
 
   const toggleToolActive = async (id: string) => {
+    console.log("🔄 [ToolsPage] Toggle tool active requested:", { id });
+
     try {
       const tool = customTools.find((t) => t.id === id);
       if (tool) {
+        console.log("🔄 [ToolsPage] Found tool for toggle:", {
+          id: tool.id,
+          name: tool.name,
+          currentStatus: tool.isActive,
+          newStatus: !tool.isActive,
+        });
+
         await client.models.tools.update({
           id,
           isActive: !tool.isActive,
         });
+        console.log("✅ [ToolsPage] Tool status updated in database");
+
         await loadTools();
         showNotification(
           "success",
           `Tool ${!tool.isActive ? "activated" : "deactivated"}`
         );
+        console.log("🎉 [ToolsPage] Toggle operation completed successfully");
+      } else {
+        console.log("❌ [ToolsPage] Tool not found for toggle:", { id });
       }
     } catch (error) {
-      console.error("Error toggling tool active state:", error);
+      console.error("❌ [ToolsPage] Error toggling tool active state:", {
+        error: error,
+        toolId: id,
+      });
       showNotification("error", "Failed to update tool status");
     }
   };
 
   const resetForm = () => {
+    console.log("🔄 [ToolsPage] Resetting form to default state");
+    console.log("🔄 [ToolsPage] Previous state:", {
+      formData,
+      parametersCount: parameters.length,
+      codeLength: pythonCode.length,
+      requirementsLength: requirementsTxt.length,
+      isEditing,
+      editingTool: editingTool?.name,
+    });
+
     setFormData({
       name: "",
       description: "",
@@ -494,6 +747,8 @@ export default function ToolsPage() {
     setRequirementsTxt("");
     setEditingTool(null);
     setIsEditing(false);
+
+    console.log("✅ [ToolsPage] Form reset completed");
   };
 
   return (

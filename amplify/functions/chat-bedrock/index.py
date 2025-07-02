@@ -461,145 +461,159 @@ def build_rag_context(relevant_docs: List[Dict]) -> str:
 def convert_tools_to_bedrock_format(tools: List[Dict]) -> List[Dict]:
     """Convert tool definitions to Amazon Bedrock Converse API format.
 
-    Transforms custom tool definitions into the format required by the Bedrock
-    Converse API for tool use functionality. Handles parameter schema conversion
-    and validation.
-
-    Args:
-        tools (List[Dict]): List of tool definition dictionaries. Each tool should contain:
-                           id, name, description, and parameters.
-
-    Returns:
-        List[Dict]: List of tools formatted for Bedrock Converse API with toolSpec structure.
-
-    Example:
-        >>> tools = [{"id": "calc", "name": "Calculator", "description": "Does math",
-        ...           "parameters": [{"name": "expr", "type": "string", "required": True}]}]
-        >>> bedrock_tools = convert_tools_to_bedrock_format(tools)
-        >>> len(bedrock_tools)
-        1
+    This function creates valid tool specifications that are compatible with
+    Bedrock's Converse API requirements. It handles parameter validation,
+    type mapping, and schema generation.
     """
-    logger.info(f"Converting {len(tools)} tools to Bedrock format")
+    logger.info(f"🔧 Converting {len(tools)} tools to Bedrock format")
 
     if not tools or not isinstance(tools, list):
-        logger.warning("No tools provided or invalid tools format")
+        logger.warning("⚠️ No tools provided or invalid tools format")
         return []
 
     bedrock_tools = []
 
     for tool_idx, tool in enumerate(tools):
-        logger.debug(f"Processing tool {tool_idx + 1}/{len(tools)}")
-
-        if not isinstance(tool, dict):
-            logger.warning(f"Tool {tool_idx + 1} is not a dictionary, skipping")
-            continue
-
         try:
+            logger.debug(f"🔧 Processing tool {tool_idx + 1}/{len(tools)}")
+            logger.debug(f"🔧 Raw tool data: {json.dumps(tool, default=str)}")
+
+            if not isinstance(tool, dict):
+                logger.warning(f"⚠️ Tool {tool_idx + 1} is not a dictionary, skipping")
+                continue
+
+            # Extract and validate required fields
             tool_id = tool.get("id", "")
-            tool_name = (
-                f"custom_tool_{tool_id}" if tool_id else f"custom_tool_{tool_idx}"
-            )
-            tool_display_name = tool.get("name", tool_id)
-            tool_description = tool.get(
-                "description", f"Custom tool: {tool_display_name}"
-            )
+            tool_name = tool.get("name", "")
+            tool_description = tool.get("description", "")
             tool_parameters = tool.get("parameters", [])
 
-            logger.debug(f"Converting tool: {tool_display_name} (ID: {tool_id})")
+            if not tool_id or not tool_name or not tool_description:
+                logger.warning(
+                    f"⚠️ Tool {tool_idx + 1} missing required fields: "
+                    f"id={bool(tool_id)}, name={bool(tool_name)}, description={bool(tool_description)}"
+                )
+                continue
 
-            # Build parameter schema from tool definition
-            parameter_schema: Dict[str, Any] = {
-                "type": "object",
-                "properties": {},
-                "required": [],
+            # Create Bedrock-compatible tool name
+            bedrock_tool_name = f"custom_tool_{tool_id}"
+
+            logger.info(f"✅ Converting tool: {tool_name} -> {bedrock_tool_name}")
+
+            # Start with basic tool specification
+            bedrock_tool = {
+                "toolSpec": {
+                    "name": bedrock_tool_name,
+                    "description": tool_description.strip(),
+                }
             }
 
-            # Handle parameters as either array or object
-            if isinstance(tool_parameters, list):
-                logger.debug(
-                    f"Processing {len(tool_parameters)} parameters for tool {tool_display_name}"
-                )
+            # Process parameters if they exist
+            if (
+                tool_parameters
+                and isinstance(tool_parameters, list)
+                and len(tool_parameters) > 0
+            ):
+                logger.debug(f"🔧 Processing {len(tool_parameters)} parameters")
+
+                # Validate and process each parameter
+                valid_properties = {}
+                required_params = []
 
                 for param_idx, param in enumerate(tool_parameters):
                     if not isinstance(param, dict):
                         logger.warning(
-                            f"Parameter {param_idx + 1} in tool {tool_display_name} is not a dictionary"
+                            f"⚠️ Parameter {param_idx + 1} is not a dict, skipping"
                         )
                         continue
 
-                    param_name = param.get("name", "")
-                    param_type = param.get("type", "string")
-                    param_description = param.get("description", "")
-                    param_required = param.get("required", False)
+                    param_name = param.get("name", "").strip()
+                    param_type = param.get("type", "string").lower()
+                    param_description = param.get("description", "").strip()
+                    param_required = bool(param.get("required", False))
 
                     if not param_name:
                         logger.warning(
-                            f"Parameter {param_idx + 1} in tool {tool_display_name} has no name"
+                            f"⚠️ Parameter {param_idx + 1} has no name, skipping"
                         )
                         continue
 
-                    # Map tool parameter types to JSON schema types
-                    json_type = {
+                    # Map to JSON Schema types
+                    json_type_mapping = {
                         "string": "string",
                         "number": "number",
                         "integer": "number",
                         "boolean": "boolean",
                         "array": "array",
                         "object": "object",
-                    }.get(param_type.lower(), "string")
+                    }
 
-                    parameter_schema["properties"][param_name] = {
+                    json_type = json_type_mapping.get(param_type, "string")
+
+                    valid_properties[param_name] = {
                         "type": json_type,
-                        "description": param_description or f"Parameter {param_name}",
+                        "description": param_description or f"Parameter: {param_name}",
                     }
 
                     if param_required:
-                        parameter_schema["required"].append(param_name)
+                        required_params.append(param_name)
 
                     logger.debug(
-                        f"Added parameter {param_name} (type: {json_type}, required: {param_required})"
+                        f"✅ Added parameter: {param_name} (type: {json_type}, required: {param_required})"
                     )
 
-            else:
-                # Fallback for tools without proper parameter definitions
-                logger.info(
-                    f"Tool {tool_display_name} has no array parameters, using generic schema"
-                )
-                parameter_schema["properties"]["action"] = {
-                    "type": "string",
-                    "description": "The action to perform",
-                }
-                parameter_schema["properties"]["parameters"] = {
-                    "type": "object",
-                    "description": "Additional parameters",
-                }
-                parameter_schema["required"] = ["action"]
+                # Only add inputSchema if we have valid properties
+                if valid_properties:
+                    json_schema = {
+                        "type": "object",
+                        "properties": valid_properties,
+                        "additionalProperties": False,
+                    }
 
-            # Create Bedrock tool specification
-            bedrock_tool = {
-                "toolSpec": {
-                    "name": tool_name,
-                    "description": tool_description,
-                    "inputSchema": {"json": parameter_schema},
-                }
-            }
+                    # Only add required array if there are required parameters
+                    if required_params:
+                        json_schema = {**json_schema, "required": required_params}
+
+                    bedrock_tool["toolSpec"]["inputSchema"] = {"json": json_schema}
+
+                    logger.info(
+                        f"✅ Tool {tool_name}: Added input schema with {len(valid_properties)} properties"
+                    )
+                    logger.debug(
+                        f"🔧 Input schema: {json.dumps(json_schema, indent=2)}"
+                    )
+                else:
+                    logger.info(
+                        f"ℹ️ Tool {tool_name}: No valid parameters found, tool will have no input schema"
+                    )
+            else:
+                logger.info(
+                    f"ℹ️ Tool {tool_name}: No parameters provided, tool will have no input schema"
+                )
+
+            # Add the completed tool to the list
             bedrock_tools.append(bedrock_tool)
 
-            logger.info(
-                f"Successfully converted tool {tool_display_name} to Bedrock format"
+            logger.info(f"🎉 Successfully converted tool: {tool_name}")
+            logger.debug(
+                f"🔧 Final tool spec: {json.dumps(bedrock_tool, indent=2, default=str)}"
             )
 
-        except KeyError as e:
-            logger.error(f"Missing required field in tool {tool_idx + 1}: {str(e)}")
         except Exception as e:
-            logger.error(
-                f"Error converting tool {tool.get('name', f'tool_{tool_idx + 1}')}: {str(e)}"
-            )
-            logger.debug(f"Tool conversion traceback: {traceback.format_exc()}")
+            logger.error(f"❌ Error processing tool {tool_idx + 1}: {str(e)}")
+            logger.debug(f"❌ Tool processing traceback: {traceback.format_exc()}")
+            continue
 
     logger.info(
-        f"Successfully converted {len(bedrock_tools)}/{len(tools)} tools to Bedrock format"
+        f"🎉 Successfully converted {len(bedrock_tools)}/{len(tools)} tools to Bedrock format"
     )
+
+    # Log final result for debugging
+    if bedrock_tools:
+        logger.debug("🔧 All converted Bedrock tools:")
+        for idx, tool in enumerate(bedrock_tools):
+            logger.debug(f"  Tool {idx + 1}: {json.dumps(tool, indent=4, default=str)}")
+
     return bedrock_tools
 
 
@@ -647,9 +661,25 @@ def execute_custom_tool(
         logger.error(error_msg)
         return {"success": False, "error": error_msg, "tool_name": tool_name}
 
-    if not isinstance(parameters, dict):
-        error_msg = "Parameters must be a dictionary"
-        logger.error(error_msg)
+    # Validate and normalize parameters
+    if parameters is None:
+        logger.info(f"Parameters is None for tool {tool_name}, using empty dict")
+        parameters = {}
+    elif not isinstance(parameters, dict):
+        logger.error(
+            f"Parameters is not a dict for tool {tool_name}: type={type(parameters)}, value={parameters}"
+        )
+        error_msg = f"Parameters must be a dictionary, got {type(parameters).__name__}"
+        return {"success": False, "error": error_msg, "tool_name": tool_name}
+
+    # Ensure parameters can be JSON serialized
+    try:
+        json.dumps(parameters, default=str)
+    except (TypeError, ValueError) as e:
+        logger.error(
+            f"Parameters cannot be JSON serialized for tool {tool_name}: {str(e)}"
+        )
+        error_msg = f"Parameters must be JSON serializable: {str(e)}"
         return {"success": False, "error": error_msg, "tool_name": tool_name}
 
     try:
@@ -844,13 +874,26 @@ def handler(event, context):
         if tools_data and isinstance(tools_data, list):
             logger.info(f"Processing {len(tools_data)} tools for Converse API")
             logger.info(
-                f"Raw tools data received: {json.dumps(tools_data, default=str)}"
+                f"Raw tools data received: {json.dumps(tools_data, default=str, indent=2)}"
             )
+
+            # Detailed validation of each tool
+            for tool_idx, tool in enumerate(tools_data):
+                logger.debug(
+                    f"Tool {tool_idx + 1} structure: {json.dumps(tool, default=str, indent=2)}"
+                )
+                logger.debug(
+                    f"Tool {tool_idx + 1} parameters type: {type(tool.get('parameters', []))}"
+                )
+                logger.debug(
+                    f"Tool {tool_idx + 1} parameters content: {tool.get('parameters', [])}"
+                )
+
             try:
                 bedrock_tools = convert_tools_to_bedrock_format(tools_data)
                 logger.info(f"Successfully converted {len(bedrock_tools)} tools")
                 logger.info(
-                    f"Converted bedrock tools: {json.dumps(bedrock_tools, default=str)}"
+                    f"Converted bedrock tools: {json.dumps(bedrock_tools, default=str, indent=2)}"
                 )
             except Exception as e:
                 logger.error(f"Tool conversion failed: {str(e)}")
@@ -1004,6 +1047,15 @@ def handler(event, context):
                         logger.debug(f"Using tool code key: {tool_code_key}")
                         if requirements_key:
                             logger.debug(f"Using requirements key: {requirements_key}")
+
+                        # Validate tool_input before passing to execute_custom_tool
+                        if not isinstance(tool_input, dict):
+                            logger.warning(
+                                f"Tool input is not a dict for {tool_name}: type={type(tool_input)}, value={tool_input}"
+                            )
+                            tool_input = (
+                                {} if tool_input is None else {"input": tool_input}
+                            )
 
                         execution_result = execute_custom_tool(
                             tool_name,

@@ -99,7 +99,6 @@ interface ErrorState {
  */
 export default function DatabasesPage() {
   // UI State
-  const [isDark, setIsDark] = useState(true);
   const [loading, setLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
 
@@ -182,8 +181,6 @@ export default function DatabasesPage() {
 
   useEffect(() => {
     console.log("[DatabasesPage] Component initialized");
-    const darkClass = document.documentElement.classList.contains("dark");
-    setIsDark(darkClass);
     fetchDatabases();
   }, []);
 

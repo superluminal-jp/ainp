@@ -78,7 +78,6 @@ export default function TemplatesPage() {
   const [editingTemplate, setEditingTemplate] = useState<TemplateData | null>(
     null
   );
-  const [showDialog, setShowDialog] = useState(false);
   const [viewingTemplate, setViewingTemplate] = useState<TemplateData | null>(
     null
   );

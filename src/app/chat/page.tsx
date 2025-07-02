@@ -66,6 +66,11 @@ import {
   Database as DatabaseType,
   Tool,
   Template,
+  ToolParameter,
+  normalizeToolParameters,
+  validateTool,
+  validateToolParameter,
+  createBedrockToolSpec,
 } from "@/lib/types";
 
 import type { Schema } from "../../../amplify/data/resource";
@@ -167,25 +172,65 @@ export default function ChatPage() {
         console.log("🔧 [ChatPage] Loading tools...");
         const { data: toolsData } = await client.models.tools.list();
         if (toolsData) {
-          const tools: Tool[] = toolsData.map((tool) => ({
-            id: tool.id,
-            name: tool.name,
-            description: tool.description,
-            parameters: Array.isArray(tool.parameters) ? tool.parameters : [],
-            pythonCodeKey: tool.pythonCodeKey,
-            requirementsKey: tool.requirementsKey || undefined,
-            isActive: tool.isActive || false,
-            createdAt: new Date(tool.createdAt),
-            owner: tool.owner || undefined,
-          }));
+          const tools: Tool[] = toolsData
+            .map((tool) => {
+              console.log(`🔧 [ChatPage] Processing tool: ${tool.name}`);
+
+              // Use the normalized parameter parsing function
+              const normalizedParameters = normalizeToolParameters(
+                tool.parameters
+              );
+
+              const processedTool: Tool = {
+                id: tool.id,
+                name: tool.name,
+                description: tool.description,
+                parameters: normalizedParameters,
+                pythonCodeKey: tool.pythonCodeKey,
+                requirementsKey: tool.requirementsKey || undefined,
+                isActive: tool.isActive || false,
+                createdAt: new Date(tool.createdAt),
+                owner: tool.owner || undefined,
+              };
+
+              // Validate the processed tool
+              if (!validateTool(processedTool)) {
+                console.error(
+                  `❌ [ChatPage] Tool validation failed for ${tool.name}:`,
+                  processedTool
+                );
+                return null;
+              }
+
+              console.log(
+                `✅ [ChatPage] Tool ${tool.name} processed successfully:`,
+                {
+                  id: processedTool.id,
+                  name: processedTool.name,
+                  parametersCount: processedTool.parameters.length,
+                  validParameters: processedTool.parameters.every(
+                    validateToolParameter
+                  ),
+                  pythonCodeKey: processedTool.pythonCodeKey,
+                  requirementsKey: processedTool.requirementsKey,
+                  isActive: processedTool.isActive,
+                }
+              );
+
+              return processedTool;
+            })
+            .filter((tool): tool is Tool => tool !== null);
+
           setCustomTools(tools);
           console.log(
-            `✅ [ChatPage] Loaded ${tools.length} tools:`,
+            `✅ [ChatPage] Loaded ${tools.length}/${toolsData.length} valid tools:`,
             tools.map((t) => ({
               id: t.id,
               name: t.name,
-              pythonCodeKey: t.pythonCodeKey,
-              requirementsKey: t.requirementsKey,
+              parametersCount: t.parameters.length,
+              hasCodeKey: !!t.pythonCodeKey,
+              hasRequirements: !!t.requirementsKey,
+              isActive: t.isActive,
             }))
           );
         } else {
@@ -293,14 +338,6 @@ export default function ChatPage() {
     setMessages([]);
     console.log("✅ [ChatPage] Chat conversation cleared successfully");
   }, []);
-
-  // Calculate sidebar margin based on state
-  const getSidebarMargin = useCallback(() => {
-    if (isMobile) {
-      return ""; // No margin on mobile
-    }
-    return state === "expanded" ? "md:ml-64" : "md:ml-12";
-  }, [state, isMobile]);
 
   // Memoize header actions to prevent re-renders
   const headerActions = useMemo(
@@ -420,7 +457,6 @@ export default function ChatPage() {
         "[data-radix-scroll-area-viewport]"
       );
       if (scrollContainer) {
-        const previousScrollTop = scrollContainer.scrollTop;
         scrollContainer.scrollTop = scrollContainer.scrollHeight;
       } else {
         console.warn("⚠️ [ChatPage] Scroll container not found");
@@ -584,21 +620,51 @@ export default function ChatPage() {
         databaseIds: selectedDatabases, // Add selected databases for RAG
         toolIds: selectedTools, // Add selected tools for agent functionality
         forceToolUse: forceToolUse && selectedTools.length > 0, // Force tool use if enabled and tools are selected
-        toolsData: selectedTools
-          .map((toolId) => {
+        toolsData: (() => {
+          const validToolData = [];
+          for (const toolId of selectedTools) {
             const tool = customTools.find((t) => t.id === toolId);
-            return tool
-              ? {
-                  id: tool.id,
-                  name: tool.name,
-                  description: tool.description,
-                  parameters: tool.parameters,
-                  pythonCodeKey: tool.pythonCodeKey,
-                  requirementsKey: tool.requirementsKey || undefined,
-                }
-              : null;
-          })
-          .filter(Boolean), // Remove null entries
+            if (!tool) {
+              console.warn(`⚠️ [ChatPage] Tool not found for ID: ${toolId}`);
+              continue;
+            }
+
+            const isValid = validateTool(tool);
+            console.log(`🔧 [ChatPage] Preparing tool data for ${tool.name}:`, {
+              id: tool.id,
+              name: tool.name,
+              parametersCount: tool.parameters.length,
+              isValid,
+            });
+
+            // Validate the tool data before sending
+            if (!isValid) {
+              console.error(`❌ [ChatPage] Tool validation failed`);
+              continue;
+            }
+
+            // Use validated tool data structure
+            const toolData = {
+              id: tool.id,
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters, // Already normalized and validated
+              pythonCodeKey: tool.pythonCodeKey,
+              requirementsKey: tool.requirementsKey || undefined,
+            };
+
+            console.log(`✅ [ChatPage] Tool data prepared for ${tool.name}:`, {
+              id: toolData.id,
+              parametersCount: toolData.parameters.length,
+              validParameters: toolData.parameters.every(validateToolParameter),
+              hasPythonCode: !!toolData.pythonCodeKey,
+              hasRequirements: !!toolData.requirementsKey,
+            });
+
+            validToolData.push(toolData);
+          }
+          return validToolData;
+        })(),
       };
 
       console.log("🔧 [ChatPage] Tool Data Debug:", {
@@ -608,10 +674,15 @@ export default function ChatPage() {
           id: t.id,
           name: t.name,
           hasParameters: !!t.parameters,
+          parametersCount: Array.isArray(t.parameters)
+            ? t.parameters.length
+            : 0,
+          parametersType: typeof t.parameters,
           hasPythonCodeKey: !!t.pythonCodeKey,
           hasRequirementsKey: !!t.requirementsKey,
         })),
-        toolsDataMapped: requestPayload.toolsData,
+        toolsDataCount: requestPayload.toolsData.length,
+        // Avoid logging complex nested objects that might cause serialization issues
       });
 
       console.log("📤 [ChatPage] Calling Bedrock function with payload:", {
@@ -633,15 +704,45 @@ export default function ChatPage() {
 
       // Call the Bedrock function
       console.log("🔄 [ChatPage] Executing chatWithBedrock query...");
-      console.log("requestPayload:", requestPayload);
+      console.log("requestPayload summary:", {
+        messagesCount: requestPayload.messages.length,
+        systemPromptLength: requestPayload.systemPrompt.length,
+        modelId: requestPayload.modelId,
+        databaseIdsCount: requestPayload.databaseIds.length,
+        toolIdsCount: requestPayload.toolIds.length,
+        toolsDataCount: requestPayload.toolsData.length,
+        forceToolUse: requestPayload.forceToolUse,
+      });
+
+      try {
+        // Validate payload before sending
+        JSON.stringify(requestPayload);
+        console.log("✅ [ChatPage] Payload serialization validation passed");
+      } catch (serializationError) {
+        console.error(
+          "❌ [ChatPage] Payload serialization failed:",
+          serializationError
+        );
+        throw new Error(`Invalid payload structure: ${serializationError}`);
+      }
+
       const result = await client.queries.chatWithBedrock(requestPayload);
 
       console.log("📥 [ChatPage] Received response from Bedrock:", {
         hasData: !!result.data,
-        errors: result.errors?.length || 0,
+        hasErrors: !!(result.errors && result.errors.length > 0),
+        errorsCount: result.errors?.length || 0,
         dataType: typeof result.data,
-        dataContent: result.data,
+        responseLength: result.data?.response?.length || 0,
+        modelId: result.data?.modelId || "unknown",
       });
+
+      if (result.errors && result.errors.length > 0) {
+        console.log(
+          "❌ [ChatPage] Error details:",
+          result.errors?.[0]?.message
+        );
+      }
 
       if (result.errors && result.errors.length > 0) {
         console.error(

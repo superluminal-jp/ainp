@@ -236,8 +236,22 @@ def handler(event, context):
         if not tool_name or not tool_code_key:
             raise ValueError("tool_name and tool_code_key are required")
 
+        # Validate and normalize parameters
+        if parameters is None:
+            logger.info("[ExecuteTool] Parameters is None, using empty dict")
+            parameters = {}
+        elif not isinstance(parameters, dict):
+            logger.error(
+                f"[ExecuteTool] Parameters is not a dict: type={type(parameters)}, value={parameters}"
+            )
+            raise ValueError(
+                f"Parameters must be a dictionary, got {type(parameters).__name__}"
+            )
+
         logger.info(f"[ExecuteTool] Executing tool: {tool_name}")
-        logger.info(f"[ExecuteTool] Parameters: {parameters}")
+        logger.info(
+            f"[ExecuteTool] Parameters: {parameters} (type: {type(parameters).__name__})"
+        )
         if requirements_key:
             logger.info(f"[ExecuteTool] Requirements key: {requirements_key}")
 

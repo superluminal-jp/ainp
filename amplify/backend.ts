@@ -45,6 +45,12 @@ backend.chatBedrockFunction.addEnvironment(
   backend.storage.resources.bucket.bucketName
 );
 
+// Add execute-tool function name to chat-bedrock function environment
+backend.chatBedrockFunction.addEnvironment(
+  "EXECUTE_TOOL_FUNCTION_NAME",
+  backend.executeToolFunction.resources.lambda.functionName
+);
+
 // Add bucket name to execute-tool function environment
 backend.executeToolFunction.addEnvironment(
   "STORAGE_BUCKET_NAME",

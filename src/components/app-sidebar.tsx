@@ -82,64 +82,6 @@ interface Template {
   tools: string[];
 }
 
-const systemPrompts = {
-  default: "I'm your AI assistant. How can I help you today?",
-  helpful:
-    "I'm a helpful assistant focused on providing clear, practical solutions.",
-  creative:
-    "I'm a creative assistant here to help with brainstorming and innovative ideas.",
-  technical:
-    "I'm a technical assistant specialized in programming and technical problems.",
-  casual: "Hey! I'm your friendly AI buddy here to chat and help out.",
-  professional:
-    "I'm a professional assistant providing formal, business-oriented support.",
-};
-
-const databases = {
-  none: { name: "None", description: "No RAG database" },
-  docs: { name: "Documentation", description: "Documentation database" },
-  code: { name: "Codebase", description: "Codebase knowledge" },
-  wiki: { name: "Wikipedia", description: "Wikipedia articles" },
-  papers: { name: "Research Papers", description: "Research papers" },
-  custom: { name: "Custom", description: "Custom knowledge base" },
-};
-
-const tools = {
-  none: { name: "None", description: "No tools available" },
-  basic: { name: "Basic Tools", description: "Calculator, search" },
-  web: { name: "Web Browser", description: "Web browsing tools" },
-  code: { name: "Code Runner", description: "Code execution tools" },
-  file: { name: "File System", description: "File system tools" },
-  mcp: { name: "MCP", description: "Model Context Protocol" },
-};
-
-const templates: Template[] = [
-  {
-    id: "research",
-    name: "Research Assistant",
-    description: "For research and analysis tasks",
-    systemPrompt: "helpful",
-    databases: ["wiki", "papers"],
-    tools: ["web", "basic"],
-  },
-  {
-    id: "developer",
-    name: "Code Helper",
-    description: "For programming and development",
-    systemPrompt: "technical",
-    databases: ["code", "docs"],
-    tools: ["code", "file"],
-  },
-  {
-    id: "creative",
-    name: "Creative Writer",
-    description: "For creative writing and brainstorming",
-    systemPrompt: "creative",
-    databases: [],
-    tools: ["basic"],
-  },
-];
-
 // Navigation items for the sidebar
 const navigationItems = [
   {
