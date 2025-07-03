@@ -1,5 +1,6 @@
 import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
 import { chatBedrockFunction } from "../functions/chat-bedrock/resource";
+import { chatBedrockToolsFunction } from "../functions/chat-bedrock-tools/resource";
 import { embedFilesFunction } from "../functions/embed-files/resource";
 
 const schema = a.schema({
@@ -15,6 +16,14 @@ const schema = a.schema({
     response: a.string().required(),
     modelId: a.string(),
     usage: a.json(), // Usage statistics from the model
+  }),
+
+  // Response structure for chat with tools
+  ChatToolsResponse: a.customType({
+    response: a.string().required(),
+    modelId: a.string(),
+    usage: a.json(), // Usage statistics from the model
+    toolsUsed: a.integer(), // Number of tools used in the response
   }),
 
   // Response structure for embedding files
@@ -97,6 +106,20 @@ const schema = a.schema({
     .returns(a.ref("ChatResponse"))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(chatBedrockFunction)),
+
+  // Chat query using Bedrock function with Tools support
+  chatWithBedrockTools: a
+    .query()
+    .arguments({
+      messages: a.ref("ChatMessage").array().required(),
+      systemPrompt: a.string(),
+      modelId: a.string(),
+      databaseIds: a.string().array(), // Add database IDs for RAG
+      useTools: a.boolean(), // Enable/disable tool functionality
+    })
+    .returns(a.ref("ChatToolsResponse"))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(chatBedrockToolsFunction)),
 
   // Embed files mutation
   embedFiles: a

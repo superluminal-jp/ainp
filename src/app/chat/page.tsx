@@ -92,6 +92,7 @@ export default function ChatPage() {
   const [selectedModelId, setSelectedModelId] = useState<string>(
     "apac.anthropic.claude-sonnet-4-20250514-v1:0"
   );
+  const [useTools, setUseTools] = useState<boolean>(true);
   const [systemPrompts, setSystemPrompts] = useState<SystemPrompt[]>([]);
   const [customDatabases, setCustomDatabases] = useState<DatabaseType[]>([]);
   const [customTemplates, setCustomTemplates] = useState<Template[]>([]);
@@ -311,6 +312,11 @@ export default function ChatPage() {
       parts.push(`${selectedModel.name}`);
     }
 
+    // Add tools info
+    if (useTools) {
+      parts.push("with tools enabled");
+    }
+
     if (selectedTemplate && selectedTemplate !== "none") {
       const template = customTemplates.find((t) => t.id === selectedTemplate);
       if (template) {
@@ -335,6 +341,7 @@ export default function ChatPage() {
     systemPrompt,
     systemPrompts,
     selectedModelId,
+    useTools,
   ]);
 
   useEffect(() => {
@@ -504,6 +511,7 @@ export default function ChatPage() {
         systemPrompt: systemPromptContent,
         modelId: selectedModelId,
         databaseIds: selectedDatabases, // Add selected databases for RAG
+        useTools: useTools, // Enable/disable tool functionality
       };
 
       console.log("📤 [ChatPage] Calling Bedrock function with payload:", {
@@ -522,12 +530,13 @@ export default function ChatPage() {
       });
 
       // Call the Bedrock function
-      console.log("🔄 [ChatPage] Executing chatWithBedrock query...");
+      console.log("🔄 [ChatPage] Executing chatWithBedrockTools query...");
       console.log("requestPayload summary:", {
         messagesCount: requestPayload.messages.length,
         systemPromptLength: requestPayload.systemPrompt.length,
         modelId: requestPayload.modelId,
         databaseIdsCount: requestPayload.databaseIds.length,
+        useTools: requestPayload.useTools,
       });
 
       try {
@@ -542,7 +551,7 @@ export default function ChatPage() {
         throw new Error(`Invalid payload structure: ${serializationError}`);
       }
 
-      const result = await client.queries.chatWithBedrock(requestPayload);
+      const result = await client.queries.chatWithBedrockTools(requestPayload);
 
       console.log("📥 [ChatPage] Received response from Bedrock:", {
         hasData: !!result.data,
@@ -589,6 +598,7 @@ export default function ChatPage() {
           responseLength: responseData.response?.length || 0,
           modelId: responseData.modelId,
           hasUsage: !!responseData.usage,
+          toolsUsed: responseData.toolsUsed || 0,
           responseType: typeof responseData,
         });
 
@@ -608,7 +618,17 @@ export default function ChatPage() {
         });
 
         setMessages((prev) => [...prev, aiResponse]);
-        toast.success("Response generated!");
+
+        // Show success message with tool usage info
+        const toolsUsedCount = responseData.toolsUsed || 0;
+        if (toolsUsedCount > 0) {
+          toast.success(
+            `Response generated using ${toolsUsedCount} tool${toolsUsedCount > 1 ? "s" : ""}!`
+          );
+        } else {
+          toast.success("Response generated!");
+        }
+
         console.log(
           "🎉 [ChatPage] AI response added to conversation successfully"
         );
@@ -843,7 +863,7 @@ export default function ChatPage() {
               </Button>
             </div>
 
-            {/* Model Selection */}
+            {/* Model Selection and Tools */}
             {showConfiguration && (
               <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
                 <div className="flex items-center gap-4 flex-1">
@@ -903,6 +923,26 @@ export default function ChatPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                {/* Tools Toggle */}
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+                    Tools:
+                  </Label>
+                  <Toggle
+                    pressed={useTools}
+                    onPressedChange={(pressed) => {
+                      console.log(
+                        `🛠️ [ChatPage] Tools toggled from ${useTools} to ${pressed}`
+                      );
+                      setUseTools(pressed);
+                    }}
+                    aria-label="Enable AI Tools"
+                    className="data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                  >
+                    <Zap className="h-4 w-4" />
+                  </Toggle>
                 </div>
               </div>
             )}
