@@ -21,12 +21,17 @@ logger.setLevel(logging.INFO)
 # Initialize clients
 bedrock_client = boto3.client("bedrock-runtime")
 s3_client = boto3.client("s3")
+dynamodb = boto3.resource("dynamodb")
 
 # Environment variables
 STORAGE_BUCKET_NAME = os.environ.get("STORAGE_BUCKET_NAME")
+TOOLSPECS_TABLE_NAME = os.environ.get("TOOLSPECS_TABLE_NAME")
 FAISS_INDEX_PREFIX = os.environ.get("FAISS_INDEX_PREFIX", "faiss-indexes")
 EMBEDDING_MODEL_ID = "amazon.titan-embed-text-v1"
 EMBEDDING_DIMENSION = 1536
+
+# DynamoDB table
+toolspecs_table = dynamodb.Table(TOOLSPECS_TABLE_NAME) if TOOLSPECS_TABLE_NAME else None
 
 
 def get_embeddings(texts: List[str]) -> List[List[float]]:
@@ -221,9 +226,47 @@ def build_rag_context(relevant_docs: List[Dict]) -> str:
     return "\n".join(context_parts) if processed_docs > 0 else ""
 
 
-# Tool definitions
-def define_tools():
-    """Define available tools for the AI assistant."""
+def load_tools_from_dynamodb():
+    """Load active tools from DynamoDB."""
+    if not toolspecs_table:
+        logger.warning("ToolSpecs table not configured, using fallback tools")
+        return get_fallback_tools()
+
+    try:
+        logger.info("Loading tools from DynamoDB")
+        response = toolspecs_table.scan(
+            FilterExpression=boto3.dynamodb.conditions.Attr("isActive").eq(True)
+        )
+
+        tools = []
+        for item in response.get("Items", []):
+            try:
+                tool_spec = {
+                    "toolSpec": {
+                        "name": item["name"],
+                        "description": item["description"],
+                        "inputSchema": {"json": item["inputSchema"]},
+                    }
+                }
+                tools.append(tool_spec)
+                logger.debug(f"Loaded tool: {item['name']}")
+            except Exception as e:
+                logger.error(
+                    f"Error parsing tool {item.get('name', 'unknown')}: {str(e)}"
+                )
+                continue
+
+        logger.info(f"Successfully loaded {len(tools)} tools from DynamoDB")
+        return tools if tools else get_fallback_tools()
+
+    except Exception as e:
+        logger.error(f"Error loading tools from DynamoDB: {str(e)}")
+        return get_fallback_tools()
+
+
+def get_fallback_tools():
+    """Get fallback tools when DynamoDB is not available."""
+    logger.info("Using fallback tools")
     return [
         {
             "toolSpec": {
@@ -308,6 +351,12 @@ def define_tools():
             }
         },
     ]
+
+
+# Tool definitions
+def define_tools():
+    """Define available tools for the AI assistant."""
+    return load_tools_from_dynamodb()
 
 
 def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:

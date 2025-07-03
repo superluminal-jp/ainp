@@ -65,9 +65,25 @@ export const chatBedrockToolsFunction = defineFunction(
       })
     );
 
+    // Add IAM permissions for DynamoDB (for tool specs)
+    fn.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan",
+        ],
+        resources: ["*"],
+      })
+    );
+
     return fn;
   },
   {
-    resourceGroupName: "chat-tools",
+    resourceGroupName: "data",
   }
 );

@@ -94,6 +94,23 @@ const schema = a.schema({
       allow.authenticated().to(["read"]),
     ]),
 
+  toolSpecs: a
+    .model({
+      id: a.id().required(),
+      name: a.string().required(),
+      description: a.string().required(),
+      inputSchema: a.json().required(), // JSON schema for tool inputs
+      isActive: a.boolean().default(true),
+      category: a.string(), // Optional category for organizing tools
+      createdAt: a.datetime().required(),
+      updatedAt: a.datetime().required(),
+      owner: a.string(),
+    })
+    .authorization((allow) => [
+      allow.owner().to(["read", "create", "update", "delete"]),
+      allow.authenticated().to(["read"]),
+    ]),
+
   // Chat query using Bedrock function
   chatWithBedrock: a
     .query()

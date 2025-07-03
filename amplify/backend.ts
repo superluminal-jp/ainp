@@ -50,3 +50,14 @@ backend.chatBedrockToolsFunction.addEnvironment(
   "STORAGE_BUCKET_NAME",
   backend.storage.resources.bucket.bucketName
 );
+
+// Grant the chat-bedrock-tools function access to the DynamoDB tables
+backend.data.resources.tables["toolSpecs"].grantReadWriteData(
+  backend.chatBedrockToolsFunction.resources.lambda
+);
+
+// Add DynamoDB table name to chat-bedrock-tools function environment
+backend.chatBedrockToolsFunction.addEnvironment(
+  "TOOLSPECS_TABLE_NAME",
+  backend.data.resources.tables["toolSpecs"].tableName
+);
