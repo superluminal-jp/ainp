@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineFunction } from "@aws-amplify/backend";
 import { DockerImage, Duration, Stack } from "aws-cdk-lib";
-import { Code, Function, Runtime, LayerVersion } from "aws-cdk-lib/aws-lambda";
+import { Code, Function, Runtime } from "aws-cdk-lib/aws-lambda";
 import { PolicyStatement, Effect } from "aws-cdk-lib/aws-iam";
 import { Bucket } from "aws-cdk-lib/aws-s3";
 
@@ -11,33 +11,6 @@ const functionDir = path.dirname(fileURLToPath(import.meta.url));
 
 export const embedFilesFunction = defineFunction(
   (scope) => {
-    // Create a Lambda layer for Python dependencies
-    const dependenciesLayer = new LayerVersion(
-      scope,
-      "embed-files-dependencies",
-      {
-        code: Code.fromAsset(functionDir, {
-          bundling: {
-            image: DockerImage.fromRegistry(
-              "public.ecr.aws/lambda/python:3.12"
-            ),
-            command: [
-              "bash",
-              "-c",
-              [
-                "pip install -r /asset-input/requirements.txt -t /asset-output/python/",
-                "find /asset-output -name '*.pyc' -delete",
-                "find /asset-output -name '__pycache__' -type d -exec rm -rf {} +",
-              ].join(" && "),
-            ],
-          },
-        }),
-        compatibleRuntimes: [Runtime.PYTHON_3_12],
-        description: "Python dependencies for embed-files function",
-      }
-    );
-
-    // Create the Lambda function
     const fn = new Function(scope, "embed-files", {
       handler: "index.handler",
       runtime: Runtime.PYTHON_3_12,
@@ -48,17 +21,18 @@ export const embedFilesFunction = defineFunction(
       },
       code: Code.fromAsset(functionDir, {
         bundling: {
-          image: DockerImage.fromRegistry("dummy"),
+          image: DockerImage.fromRegistry("public.ecr.aws/lambda/python:3.12"),
           local: {
             tryBundle(outputDir: string) {
-              // Only copy function code, not dependencies
-              execSync(`cp ${functionDir}/*.py ${path.join(outputDir)}`);
+              execSync(
+                `python3 -m pip install -r ${path.join(functionDir, "requirements.txt")} -t ${path.join(outputDir)} --platform manylinux2014_x86_64 --only-binary=:all:`
+              );
+              execSync(`cp -r ${functionDir}/* ${path.join(outputDir)}`);
               return true;
             },
           },
         },
       }),
-      layers: [dependenciesLayer],
     });
 
     // Add IAM permissions for Bedrock
