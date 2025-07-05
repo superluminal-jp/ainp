@@ -745,7 +745,6 @@ export default function DatabasesPage() {
                 fileKey: file.fileKey,
                 fileSize: file.size,
                 fileType: file.type,
-                uploadDate: file.uploadDate.toISOString(),
               });
 
             // Start embedding process automatically for each file
@@ -1068,7 +1067,6 @@ export default function DatabasesPage() {
             fileKey: fileKey,
             fileSize: file.size,
             fileType: file.type,
-            uploadDate: new Date().toISOString(),
           }
         );
 
@@ -1661,7 +1659,7 @@ export default function DatabasesPage() {
                               type: file.fileType || "unknown",
                               fileKey: file.fileKey,
                               uploadDate: new Date(
-                                file.uploadDate || Date.now()
+                                file.createdAt || Date.now()
                               ),
                             };
                             await viewFile(uploadedFile);
@@ -1678,9 +1676,9 @@ export default function DatabasesPage() {
                                   {file.fileSize &&
                                     formatFileSize(file.fileSize)}{" "}
                                   • {file.fileType} •{" "}
-                                  {file.uploadDate &&
+                                  {file.createdAt &&
                                     new Date(
-                                      file.uploadDate
+                                      file.createdAt
                                     ).toLocaleDateString()}
                                 </p>
                               </div>
@@ -1698,7 +1696,7 @@ export default function DatabasesPage() {
                                     type: file.fileType || "unknown",
                                     fileKey: file.fileKey,
                                     uploadDate: new Date(
-                                      file.uploadDate || Date.now()
+                                      file.createdAt || Date.now()
                                     ),
                                   };
                                   await viewFile(uploadedFile);
@@ -1720,7 +1718,7 @@ export default function DatabasesPage() {
                                     type: file.fileType || "unknown",
                                     fileKey: file.fileKey,
                                     uploadDate: new Date(
-                                      file.uploadDate || Date.now()
+                                      file.createdAt || Date.now()
                                     ),
                                   };
                                   await downloadFile(uploadedFile);

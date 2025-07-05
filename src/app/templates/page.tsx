@@ -126,7 +126,7 @@ export default function TemplatesPage() {
             systemPromptId: template.systemPromptId,
             databaseIds,
             isActive: template.isActive ?? true,
-            createdAt: new Date(template.createdAt),
+            createdAt: new Date(template.createdAt || Date.now()),
             systemPrompt,
             databases: relatedDatabases,
           } as TemplateData;
