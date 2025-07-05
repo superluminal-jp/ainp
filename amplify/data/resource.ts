@@ -100,6 +100,7 @@ const schema = a.schema({
       name: a.string().required(),
       description: a.string().required(),
       inputSchema: a.json().required(), // JSON schema for tool inputs
+      executionCode: a.string(), // Python code for tool execution
       isActive: a.boolean().default(true),
       category: a.string(), // Optional category for organizing tools
       createdAt: a.datetime().required(),
@@ -133,6 +134,7 @@ const schema = a.schema({
       modelId: a.string(),
       databaseIds: a.string().array(), // Add database IDs for RAG
       useTools: a.boolean(), // Enable/disable tool functionality
+      selectedToolIds: a.string().array(), // Add selected custom tool IDs
     })
     .returns(a.ref("ChatToolsResponse"))
     .authorization((allow) => [allow.authenticated()])

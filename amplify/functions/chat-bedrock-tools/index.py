@@ -226,14 +226,14 @@ def build_rag_context(relevant_docs: List[Dict]) -> str:
     return "\n".join(context_parts) if processed_docs > 0 else ""
 
 
-def load_tools_from_dynamodb():
-    """Load active tools from DynamoDB."""
+def load_tools_from_dynamodb(selected_tool_ids=None):
+    """Load active tools from DynamoDB, optionally filtered by selected tool IDs."""
     if not toolspecs_table:
         logger.warning("ToolSpecs table not configured, using fallback tools")
         return get_fallback_tools()
 
     try:
-        logger.info("Loading tools from DynamoDB")
+        logger.info(f"Loading tools from DynamoDB, selected IDs: {selected_tool_ids}")
         response = toolspecs_table.scan(
             FilterExpression=boto3.dynamodb.conditions.Attr("isActive").eq(True)
         )
@@ -241,6 +241,13 @@ def load_tools_from_dynamodb():
         tools = []
         for item in response.get("Items", []):
             try:
+                # If specific tools are selected, only include those
+                if selected_tool_ids and item["id"] not in selected_tool_ids:
+                    logger.debug(
+                        f"Skipping tool {item['name']} - not in selected tools"
+                    )
+                    continue
+
                 tool_spec = {
                     "toolSpec": {
                         "name": item["name"],
@@ -264,218 +271,103 @@ def load_tools_from_dynamodb():
         return get_fallback_tools()
 
 
+def get_tool_execution_code(tool_name: str) -> Optional[str]:
+    """Get execution code for a specific tool from DynamoDB."""
+    if not toolspecs_table:
+        return None
+
+    try:
+        response = toolspecs_table.scan(
+            FilterExpression=boto3.dynamodb.conditions.Attr("name").eq(tool_name)
+            & boto3.dynamodb.conditions.Attr("isActive").eq(True)
+        )
+
+        items = response.get("Items", [])
+        if items:
+            return items[0].get("executionCode")
+
+        return None
+    except Exception as e:
+        logger.error(f"Error getting execution code for tool {tool_name}: {str(e)}")
+        return None
+
+
+def execute_custom_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute custom tool code from DynamoDB."""
+    try:
+        execution_code = get_tool_execution_code(tool_name)
+        if not execution_code:
+            return {
+                "error": f"No execution code found for tool: {tool_name}",
+                "success": False,
+            }
+
+        # Create a safe execution environment
+        safe_globals: Dict[str, Any] = {
+            "__builtins__": {
+                "len": len,
+                "str": str,
+                "int": int,
+                "float": float,
+                "bool": bool,
+                "list": list,
+                "dict": dict,
+                "tuple": tuple,
+                "set": set,
+                "range": range,
+                "enumerate": enumerate,
+                "zip": zip,
+                "map": map,
+                "filter": filter,
+                "sum": sum,
+                "min": min,
+                "max": max,
+                "abs": abs,
+                "round": round,
+                "print": print,
+            },
+            "json": json,
+            "math": math,
+            "re": re,
+            "datetime": datetime,
+            "timezone": timezone,
+            "tool_input": tool_input,
+            "logger": logger,
+        }
+
+        # Execute the custom code
+        exec(execution_code, safe_globals)
+
+        # The custom code should set a 'result' variable
+        if "result" in safe_globals:
+            return safe_globals["result"]
+        else:
+            return {"error": "Custom tool did not return a result", "success": False}
+
+    except Exception as e:
+        logger.error(f"Error executing custom tool {tool_name}: {str(e)}")
+        return {"error": f"Custom tool execution failed: {str(e)}", "success": False}
+
+
 def get_fallback_tools():
     """Get fallback tools when DynamoDB is not available."""
-    logger.info("Using fallback tools")
-    return [
-        {
-            "toolSpec": {
-                "name": "web_search",
-                "description": "Search the web for current information about a topic",
-                "inputSchema": {
-                    "json": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "The search query to look up on the web",
-                            }
-                        },
-                        "required": ["query"],
-                    }
-                },
-            }
-        },
-        {
-            "toolSpec": {
-                "name": "calculator",
-                "description": "Perform mathematical calculations",
-                "inputSchema": {
-                    "json": {
-                        "type": "object",
-                        "properties": {
-                            "expression": {
-                                "type": "string",
-                                "description": "Mathematical expression to evaluate "
-                                + "(e.g., '2 + 3 * 4', 'sqrt(16)', 'sin(pi/2)')",
-                            }
-                        },
-                        "required": ["expression"],
-                    }
-                },
-            }
-        },
-        {
-            "toolSpec": {
-                "name": "get_current_time",
-                "description": "Get the current date and time. Use this tool whenever the user asks for "
-                + "the current time, date, or 'what time is it'.",
-                "inputSchema": {
-                    "json": {
-                        "type": "object",
-                        "properties": {
-                            "timezone": {
-                                "type": "string",
-                                "description": "Timezone to get time for (e.g., 'UTC', 'US/Eastern'). Defaults to UTC.",
-                            }
-                        },
-                    }
-                },
-            }
-        },
-        {
-            "toolSpec": {
-                "name": "search_documents",
-                "description": "Search through uploaded documents in vector databases",
-                "inputSchema": {
-                    "json": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "Search query to find relevant documents",
-                            },
-                            "database_ids": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                                "description": "List of database IDs to search in",
-                            },
-                            "top_k": {
-                                "type": "integer",
-                                "description": "Number of top results to return (default: 5)",
-                            },
-                        },
-                        "required": ["query", "database_ids"],
-                    }
-                },
-            }
-        },
-    ]
+    logger.info("Using fallback tools - no built-in tools available")
+    return []
 
 
-# Tool definitions
-def define_tools():
+def define_tools(selected_tool_ids=None):
     """Define available tools for the AI assistant."""
-    return load_tools_from_dynamodb()
+    return load_tools_from_dynamodb(selected_tool_ids)
 
 
 def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
     """Execute a tool based on the tool name and input."""
     try:
-        if tool_name == "web_search":
-            return execute_web_search(tool_input)
-        elif tool_name == "calculator":
-            return execute_calculator(tool_input)
-        elif tool_name == "get_current_time":
-            return execute_get_current_time(tool_input)
-        elif tool_name == "search_documents":
-            return execute_search_documents(tool_input)
-        else:
-            return {"error": f"Unknown tool: {tool_name}", "success": False}
+        # Execute as a custom tool from DynamoDB
+        return execute_custom_tool(tool_name, tool_input)
     except Exception as e:
         logger.error(f"Error executing tool {tool_name}: {str(e)}")
         return {"error": f"Tool execution failed: {str(e)}", "success": False}
-
-
-def execute_web_search(tool_input: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute web search tool."""
-    query = tool_input.get("query", "")
-    if not query:
-        return {"error": "Search query is required", "success": False}
-
-    try:
-        # Simple mock implementation - in production you'd use a real search API
-        # For now, return a placeholder response
-        return {
-            "success": True,
-            "query": query,
-            "results": [
-                {
-                    "title": f"Search results for: {query}",
-                    "snippet": "Web search functionality is not fully implemented in this demo. "
-                    + "This is a placeholder response.",
-                    "url": "https://example.com",
-                }
-            ],
-            "message": f"Web search for '{query}' completed (demo mode)",
-        }
-    except Exception as e:
-        return {"error": f"Web search failed: {str(e)}", "success": False}
-
-
-def execute_calculator(tool_input: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute calculator tool."""
-    expression = tool_input.get("expression", "")
-    if not expression:
-        return {"error": "Mathematical expression is required", "success": False}
-
-    try:
-        # Safe evaluation of mathematical expressions
-        # Allow basic math operations and functions
-        allowed_names = {
-            name: getattr(math, name)
-            for name in dir(math)
-            if not name.startswith("__") and callable(getattr(math, name, None))
-        }
-        allowed_names.update({"abs": abs, "round": round, "min": min, "max": max})
-
-        # Clean the expression
-        expression = re.sub(r"[^0-9+\-*/().\s\w]", "", expression)
-
-        result = eval(expression, {"__builtins__": {}}, allowed_names)
-
-        return {
-            "success": True,
-            "expression": expression,
-            "result": result,
-            "message": f"{expression} = {result}",
-        }
-    except Exception as e:
-        return {"error": f"Calculation failed: {str(e)}", "success": False}
-
-
-def execute_get_current_time(tool_input: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute get current time tool."""
-    try:
-        timezone_name = tool_input.get("timezone", "UTC")
-        current_time = datetime.now(timezone.utc)
-
-        return {
-            "success": True,
-            "current_time": current_time.isoformat(),
-            "timezone": timezone_name,
-            "formatted_time": current_time.strftime("%Y-%m-%d %H:%M:%S %Z"),
-            "message": f"Current time: {current_time.strftime('%Y-%m-%d %H:%M:%S %Z')}",
-        }
-    except Exception as e:
-        return {"error": f"Failed to get current time: {str(e)}", "success": False}
-
-
-def execute_search_documents(tool_input: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute document search tool."""
-    query = tool_input.get("query", "")
-    database_ids = tool_input.get("database_ids", [])
-    top_k = tool_input.get("top_k", 5)
-
-    if not query:
-        return {"error": "Search query is required", "success": False}
-
-    if not database_ids:
-        return {"error": "Database IDs are required", "success": False}
-
-    try:
-        relevant_docs = search_relevant_documents(query, database_ids, top_k)
-
-        return {
-            "success": True,
-            "query": query,
-            "database_ids": database_ids,
-            "results_count": len(relevant_docs),
-            "results": relevant_docs,
-            "message": f"Found {len(relevant_docs)} relevant documents for '{query}'",
-        }
-    except Exception as e:
-        return {"error": f"Document search failed: {str(e)}", "success": False}
 
 
 def handler(event, context):
@@ -493,20 +385,22 @@ def handler(event, context):
         messages_data = arguments.get("messages", [])
         system_prompt = arguments.get(
             "systemPrompt",
-            "You are a helpful AI assistant with access to various tools. "
+            "You are a helpful AI assistant with access to various custom tools. "
             "Always use the appropriate tools when they can help answer the user's question. "
-            "For time-related queries, use the get_current_time tool. "
-            "For mathematical calculations, use the calculator tool. "
-            "For searching documents, use the search_documents tool. "
-            "For web searches, use the web_search tool.",
+            "Use the available tools to provide accurate and helpful responses.",
         )
         model_id = arguments.get(
             "modelId", "apac.anthropic.claude-sonnet-4-20250514-v1:0"
         )
         database_ids = arguments.get("databaseIds", [])
         use_tools = arguments.get("useTools", True)
+        selected_tool_ids = arguments.get("selectedToolIds", [])
 
-        logger.info(f"Request configuration - Model: {model_id}, Tools: {use_tools}")
+        logger.info(
+            f"Request configuration - Model: {model_id}, Tools: {use_tools}, Selected tools: {len(selected_tool_ids)}"
+        )
+        if selected_tool_ids:
+            logger.info(f"Selected tool IDs: {selected_tool_ids}")
 
         if not isinstance(messages_data, list) or not messages_data:
             raise ValueError("Messages array is required and must be non-empty")
@@ -567,7 +461,7 @@ def handler(event, context):
 
         # Add tools if enabled
         if use_tools:
-            converse_params["toolConfig"] = {"tools": define_tools()}
+            converse_params["toolConfig"] = {"tools": define_tools(selected_tool_ids)}
 
         # Generate response using Converse API
         logger.info("Invoking Bedrock Converse API...")
@@ -636,7 +530,9 @@ def handler(event, context):
 
             # Include toolConfig when conversation contains tool use/result blocks
             if use_tools:
-                final_converse_params["toolConfig"] = {"tools": define_tools()}
+                final_converse_params["toolConfig"] = {
+                    "tools": define_tools(selected_tool_ids)
+                }
 
             logger.info("Getting final response after tool execution...")
             final_response = bedrock_client.converse(**final_converse_params)

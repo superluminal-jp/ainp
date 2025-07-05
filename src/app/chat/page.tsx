@@ -92,16 +92,25 @@ export default function ChatPage() {
   const [selectedModelId, setSelectedModelId] = useState<string>(
     "apac.anthropic.claude-sonnet-4-20250514-v1:0"
   );
-  const [useTools, setUseTools] = useState<boolean>(true);
+
   const [systemPrompts, setSystemPrompts] = useState<SystemPrompt[]>([]);
   const [customDatabases, setCustomDatabases] = useState<DatabaseType[]>([]);
   const [customTemplates, setCustomTemplates] = useState<Template[]>([]);
+  const [customTools, setCustomTools] = useState<
+    { id: string; name: string; description: string; isActive: boolean }[]
+  >([]);
+  const [selectedTools, setSelectedTools] = useState<string[]>([]);
+
+  // Tools are automatically enabled when tools are selected
+  const useTools = useMemo(() => selectedTools.length > 0, [selectedTools]);
+
   const [showTemplateCreator, setShowTemplateCreator] = useState(false);
   const [templateForm, setTemplateForm] = useState({
     name: "",
     description: "",
     systemPrompt: "default",
     databases: [] as string[],
+    tools: [] as string[],
   });
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -178,6 +187,25 @@ export default function ChatPage() {
           console.log("⚠️ [ChatPage] No templates data received");
         }
 
+        // Load tools
+        console.log("🛠️ [ChatPage] Loading tools...");
+        const { data: toolsData } = await client.models.toolSpecs.list();
+        if (toolsData) {
+          const tools = toolsData.map((tool) => ({
+            id: tool.id,
+            name: tool.name,
+            description: tool.description,
+            isActive: tool.isActive || false,
+          }));
+          setCustomTools(tools);
+          console.log(
+            `✅ [ChatPage] Loaded ${tools.length} tools:`,
+            tools.map((t) => t.name)
+          );
+        } else {
+          console.log("⚠️ [ChatPage] No tools data received");
+        }
+
         console.log("🎉 [ChatPage] Data loading completed successfully");
       } catch (error) {
         console.error("❌ [ChatPage] Error loading data:", error);
@@ -241,6 +269,7 @@ export default function ChatPage() {
       console.log("🔄 [ChatPage] Clearing template selections");
       setSystemPrompt("default");
       setSelectedDatabases([]);
+      setSelectedTools([]);
       setSelectedModelId("apac.anthropic.claude-sonnet-4-20250514-v1:0"); // Reset to default model
       console.log("✅ [ChatPage] Template selections cleared");
       toast.info("Template cleared");
@@ -272,6 +301,29 @@ export default function ChatPage() {
           </Tooltip>
         )}
 
+        {selectedTools.length > 0 && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge variant="secondary" className="text-xs cursor-pointer">
+                <Zap className="h-3 w-3 mr-1" />
+                {selectedTools.length} Tool
+                {selectedTools.length > 1 ? "s" : ""}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>
+                Selected tools:{" "}
+                {selectedTools
+                  .map((toolId) => {
+                    const tool = customTools.find((t) => t.id === toolId);
+                    return tool ? tool.name : toolId;
+                  })
+                  .join(", ")}
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        )}
+
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="ghost" size="icon">
@@ -297,7 +349,7 @@ export default function ChatPage() {
         </Popover>
       </div>
     ),
-    [selectedDatabases, clearChat]
+    [selectedDatabases, selectedTools, customTools, clearChat]
   );
 
   // Memoize description to prevent unnecessary re-renders
@@ -512,6 +564,7 @@ export default function ChatPage() {
         modelId: selectedModelId,
         databaseIds: selectedDatabases, // Add selected databases for RAG
         useTools: useTools, // Enable/disable tool functionality
+        selectedToolIds: selectedTools, // Add selected custom tools
       };
 
       console.log("📤 [ChatPage] Calling Bedrock function with payload:", {
@@ -537,6 +590,7 @@ export default function ChatPage() {
         modelId: requestPayload.modelId,
         databaseIdsCount: requestPayload.databaseIds.length,
         useTools: requestPayload.useTools,
+        selectedToolsCount: requestPayload.selectedToolIds.length,
       });
 
       try {
@@ -924,32 +978,13 @@ export default function ChatPage() {
                     </SelectContent>
                   </Select>
                 </div>
-
-                {/* Tools Toggle */}
-                <div className="flex items-center gap-2">
-                  <Label className="text-sm font-medium text-muted-foreground whitespace-nowrap">
-                    Tools:
-                  </Label>
-                  <Toggle
-                    pressed={useTools}
-                    onPressedChange={(pressed) => {
-                      console.log(
-                        `🛠️ [ChatPage] Tools toggled from ${useTools} to ${pressed}`
-                      );
-                      setUseTools(pressed);
-                    }}
-                    aria-label="Enable AI Tools"
-                    className="data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-                  >
-                    <Zap className="h-4 w-4" />
-                  </Toggle>
-                </div>
               </div>
             )}
 
             {/* Configuration Section */}
             {showConfiguration && (
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 p-3 bg-muted/50 rounded-lg">
+              <div className="space-y-3 p-3 bg-muted/50 rounded-lg">
+                {/* Template Selection - Full Width */}
                 <div className="space-y-1">
                   <Label className="text-xs font-medium text-muted-foreground">
                     Template
@@ -972,6 +1007,7 @@ export default function ChatPage() {
                   </Select>
                 </div>
 
+                {/* System Prompt - Full Width */}
                 <div className="space-y-1">
                   <Label className="text-xs font-medium text-muted-foreground">
                     System Prompt
@@ -1007,6 +1043,7 @@ export default function ChatPage() {
                   </Select>
                 </div>
 
+                {/* Databases Section */}
                 <div className="space-y-1">
                   <Label className="text-xs font-medium text-muted-foreground">
                     Databases
@@ -1015,10 +1052,10 @@ export default function ChatPage() {
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
-                        className="h-8 text-xs justify-start"
+                        className="h-8 text-xs justify-start w-full"
                       >
                         {selectedDatabases.length > 0
-                          ? `${selectedDatabases.length} selected`
+                          ? `${selectedDatabases.length} database${selectedDatabases.length > 1 ? "s" : ""} selected`
                           : "Select databases"}
                       </Button>
                     </PopoverTrigger>
@@ -1097,6 +1134,105 @@ export default function ChatPage() {
                         {customDatabases.length === 0 && (
                           <div className="text-sm text-muted-foreground">
                             No databases available
+                          </div>
+                        )}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                {/* Tools Section - Configuration Level 4 */}
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Tools
+                  </Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="h-8 text-xs justify-start w-full"
+                      >
+                        {selectedTools.length > 0
+                          ? `${selectedTools.length} tool${selectedTools.length > 1 ? "s" : ""} selected`
+                          : "Select tools"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-56">
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">Select Tools</div>
+                        {customTools
+                          .filter((tool) => tool.isActive)
+                          .map((tool) => (
+                            <div
+                              key={tool.id}
+                              className="flex items-center space-x-2"
+                            >
+                              <input
+                                type="checkbox"
+                                id={`tool-${tool.id}`}
+                                checked={selectedTools.includes(tool.id)}
+                                onChange={(e) => {
+                                  console.log(
+                                    `🛠️ [ChatPage] Tool ${e.target.checked ? "selected" : "deselected"}: ${tool.name} (ID: ${tool.id})`
+                                  );
+                                  console.log(
+                                    `🛠️ [ChatPage] Current selectedTools before change:`,
+                                    selectedTools
+                                  );
+                                  if (e.target.checked) {
+                                    setSelectedTools((prev) => {
+                                      const newSelection = [...prev, tool.id];
+                                      console.log(
+                                        `🛠️ [ChatPage] ✅ Added tool - New selection:`,
+                                        newSelection
+                                      );
+                                      console.log(
+                                        `🛠️ [ChatPage] ✅ Tool names in selection:`,
+                                        newSelection.map((id) => {
+                                          const t = customTools.find(
+                                            (t) => t.id === id
+                                          );
+                                          return t ? t.name : `Unknown(${id})`;
+                                        })
+                                      );
+                                      return newSelection;
+                                    });
+                                  } else {
+                                    setSelectedTools((prev) => {
+                                      const newSelection = prev.filter(
+                                        (id) => id !== tool.id
+                                      );
+                                      console.log(
+                                        `🛠️ [ChatPage] ❌ Removed tool - New selection:`,
+                                        newSelection
+                                      );
+                                      console.log(
+                                        `🛠️ [ChatPage] ❌ Tool names in selection:`,
+                                        newSelection.map((id) => {
+                                          const t = customTools.find(
+                                            (t) => t.id === id
+                                          );
+                                          return t ? t.name : `Unknown(${id})`;
+                                        })
+                                      );
+                                      return newSelection;
+                                    });
+                                  }
+                                }}
+                                className="rounded border-border"
+                              />
+                              <label
+                                htmlFor={`tool-${tool.id}`}
+                                className="text-sm"
+                              >
+                                {tool.name}
+                              </label>
+                            </div>
+                          ))}
+                        {customTools.filter((tool) => tool.isActive).length ===
+                          0 && (
+                          <div className="text-sm text-muted-foreground">
+                            No active tools available
                           </div>
                         )}
                       </div>
