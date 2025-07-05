@@ -177,6 +177,7 @@ export default function ChatPage() {
             databases: Array.isArray(template.databaseIds)
               ? template.databaseIds
               : [],
+            tools: Array.isArray(template.toolIds) ? template.toolIds : [],
           }));
           setCustomTemplates(templates);
           console.log(
@@ -247,6 +248,20 @@ export default function ChatPage() {
         }
 
         setSelectedDatabases(template.databases);
+
+        // Apply tools from template if available
+        if (template.tools && Array.isArray(template.tools)) {
+          setSelectedTools(template.tools);
+          console.log(
+            `🛠️ [ChatPage] Applied ${template.tools.length} tools from template: ${template.tools.join(", ")}`
+          );
+        } else {
+          setSelectedTools([]);
+          console.log(
+            "🛠️ [ChatPage] No tools in template, cleared tool selection"
+          );
+        }
+
         console.log(
           `✅ [ChatPage] Template applied successfully: ${template.name}`
         );
@@ -616,6 +631,8 @@ export default function ChatPage() {
         modelId: result.data?.modelId || "unknown",
       });
 
+      console.log("result", result);
+
       if (result.errors && result.errors.length > 0) {
         console.log(
           "❌ [ChatPage] Error details:",
@@ -676,8 +693,14 @@ export default function ChatPage() {
         // Show success message with tool usage info
         const toolsUsedCount = responseData.toolsUsed || 0;
         if (toolsUsedCount > 0) {
+          const toolNames = selectedTools
+            .map((toolId) => {
+              const tool = customTools.find((t) => t.id === toolId);
+              return tool ? tool.name : toolId;
+            })
+            .join(", ");
           toast.success(
-            `Response generated using ${toolsUsedCount} tool${toolsUsedCount > 1 ? "s" : ""}!`
+            `Response generated using ${toolsUsedCount} tool${toolsUsedCount > 1 ? "s" : ""}: ${toolNames}!`
           );
         } else {
           toast.success("Response generated!");

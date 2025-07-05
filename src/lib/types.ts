@@ -26,6 +26,7 @@ export interface Template {
   description: string;
   systemPrompt: string;
   databases: string[];
+  tools?: string[];
 }
 
 export interface GeneratedPage {

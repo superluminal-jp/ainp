@@ -1,4 +1,16 @@
 # boto3
 # numpy
 faiss-cpu
-requests 
+# requests
+# pandas
+# numpy
+# beautifulsoup4
+# python-dateutil
+# pytz
+# matplotlib
+# seaborn
+# scikit-learn
+# lxml
+# openpyxl
+# pillow
+# cryptography 

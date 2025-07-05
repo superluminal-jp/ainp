@@ -10,9 +10,7 @@ from typing import List, Dict, Optional, Any, Tuple
 import traceback
 
 # import requests  # Currently unused, but available for future web search implementation
-import re
-import math
-from datetime import datetime, timezone
+from datetime import datetime
 
 # Configure logging
 logger = logging.getLogger()
@@ -29,6 +27,7 @@ TOOLSPECS_TABLE_NAME = os.environ.get("TOOLSPECS_TABLE_NAME")
 FAISS_INDEX_PREFIX = os.environ.get("FAISS_INDEX_PREFIX", "faiss-indexes")
 EMBEDDING_MODEL_ID = "amazon.titan-embed-text-v1"
 EMBEDDING_DIMENSION = 1536
+FALLBACK_MODEL_ID = "apac.anthropic.claude-sonnet-4-20250514-v1:0"
 
 # DynamoDB table
 toolspecs_table = dynamodb.Table(TOOLSPECS_TABLE_NAME) if TOOLSPECS_TABLE_NAME else None
@@ -248,15 +247,26 @@ def load_tools_from_dynamodb(selected_tool_ids=None):
                     )
                     continue
 
+                # Parse the input schema from JSON string
+                try:
+                    input_schema = (
+                        json.loads(item["inputSchema"])
+                        if isinstance(item["inputSchema"], str)
+                        else item["inputSchema"]
+                    )
+                except (json.JSONDecodeError, TypeError):
+                    logger.error(f"Invalid input schema for tool {item['name']}")
+                    continue
+
                 tool_spec = {
                     "toolSpec": {
                         "name": item["name"],
                         "description": item["description"],
-                        "inputSchema": {"json": item["inputSchema"]},
+                        "inputSchema": {"json": input_schema},
                     }
                 }
                 tools.append(tool_spec)
-                logger.debug(f"Loaded tool: {item['name']}")
+                logger.info(f"Loaded tool: {item['name']}")
             except Exception as e:
                 logger.error(
                     f"Error parsing tool {item.get('name', 'unknown')}: {str(e)}"
@@ -292,6 +302,73 @@ def get_tool_execution_code(tool_name: str) -> Optional[str]:
         return None
 
 
+def install_tool_requirements(tool_name: str) -> bool:
+    """Install required packages for a tool at runtime."""
+    try:
+        # Get tool requirements from DynamoDB
+        if not toolspecs_table:
+            return True
+
+        response = toolspecs_table.scan(
+            FilterExpression=boto3.dynamodb.conditions.Attr("name").eq(tool_name)
+            & boto3.dynamodb.conditions.Attr("isActive").eq(True)
+        )
+
+        items = response.get("Items", [])
+        if not items:
+            return True
+
+        requirements = items[0].get("requirements", "")
+        if not requirements or not requirements.strip():
+            return True
+
+        # Install packages using pip
+        import subprocess
+        import sys
+
+        packages = [req.strip() for req in requirements.split("\n") if req.strip()]
+        for package in packages:
+            try:
+                logger.info(f"Installing package: {package}")
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "pip",
+                        "install",
+                        package,
+                        "--target",
+                        "/tmp/packages",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if result.returncode != 0:
+                    logger.error(f"Failed to install {package}: {result.stderr}")
+                    return False
+                else:
+                    logger.info(f"Successfully installed {package}")
+            except subprocess.TimeoutExpired:
+                logger.error(f"Timeout installing {package}")
+                return False
+            except Exception as e:
+                logger.error(f"Error installing {package}: {str(e)}")
+                return False
+
+        # Add installed packages to Python path
+        import sys
+
+        if "/tmp/packages" not in sys.path:
+            sys.path.insert(0, "/tmp/packages")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error installing requirements for {tool_name}: {str(e)}")
+        return False
+
+
 def execute_custom_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
     """Execute custom tool code from DynamoDB."""
     try:
@@ -302,47 +379,115 @@ def execute_custom_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str,
                 "success": False,
             }
 
-        # Create a safe execution environment
-        safe_globals: Dict[str, Any] = {
-            "__builtins__": {
-                "len": len,
-                "str": str,
-                "int": int,
-                "float": float,
-                "bool": bool,
-                "list": list,
-                "dict": dict,
-                "tuple": tuple,
-                "set": set,
-                "range": range,
-                "enumerate": enumerate,
-                "zip": zip,
-                "map": map,
-                "filter": filter,
-                "sum": sum,
-                "min": min,
-                "max": max,
-                "abs": abs,
-                "round": round,
-                "print": print,
-            },
-            "json": json,
-            "math": math,
-            "re": re,
-            "datetime": datetime,
-            "timezone": timezone,
+        # Install tool requirements at runtime
+        if not install_tool_requirements(tool_name):
+            return {
+                "error": f"Failed to install requirements for tool: {tool_name}",
+                "success": False,
+            }
+
+        # Create execution environment with all necessary globals
+        execution_globals = globals().copy()
+        execution_globals.update(
+            {
+                "json": json,
+                "datetime": datetime,
+                "logger": logger,
+                "os": os,
+                "tempfile": tempfile,
+                "traceback": traceback,
+            }
+        )
+
+        # Execute the custom code to define the handler function
+        local_vars = {}
+        exec(execution_code, execution_globals, local_vars)
+
+        # Check if handler function exists
+        if "handler" not in local_vars:
+            return {
+                "error": "Custom tool must define a 'handler' function",
+                "success": False,
+            }
+
+        # Update the execution globals with all defined functions/variables
+        execution_globals.update(local_vars)
+
+        # Create mock context object for Lambda handler
+        class MockContext:
+            def __init__(self):
+                self.aws_request_id = (
+                    f"tool-{tool_name}-{int(datetime.now().timestamp())}"
+                )
+                self.function_name = f"custom-tool-{tool_name}"
+                self.function_version = "1"
+                self.memory_limit_in_mb = 256
+                self.remaining_time_in_millis = 60000
+
+        mock_context = MockContext()
+
+        # Create event object with tool_input
+        event = {
             "tool_input": tool_input,
-            "logger": logger,
+            "tool_name": tool_name,
+            "source": "bedrock-tools",
         }
 
-        # Execute the custom code
-        exec(execution_code, safe_globals)
+        # Call the handler function with the updated globals
+        handler = local_vars["handler"]
+        if not callable(handler):
+            return {
+                "error": "Handler must be a callable function",
+                "success": False,
+            }
 
-        # The custom code should set a 'result' variable
-        if "result" in safe_globals:
-            return safe_globals["result"]
+        # Set the function's globals to include all defined functions
+        handler.__globals__.update(execution_globals)
+        handler_result = handler(event, mock_context)
+
+        # Parse the Lambda response format
+        if isinstance(handler_result, dict):
+            if "statusCode" in handler_result and "body" in handler_result:
+                # Lambda response format
+                if handler_result["statusCode"] == 200:
+                    # Parse body if it's a JSON string
+                    body = handler_result["body"]
+                    if isinstance(body, str):
+                        try:
+                            parsed_body = json.loads(body)
+                            if isinstance(parsed_body, dict):
+                                return parsed_body
+                            else:
+                                return {"result": parsed_body, "success": True}
+                        except json.JSONDecodeError:
+                            # If body is not JSON, return as structured result
+                            return {"result": body, "success": True}
+                    elif isinstance(body, dict):
+                        return body
+                    else:
+                        return {"result": body, "success": True}
+                else:
+                    # Error response
+                    error_body = handler_result.get("body", "Unknown error")
+                    if isinstance(error_body, str):
+                        try:
+                            parsed_error = json.loads(error_body)
+                            if isinstance(parsed_error, dict):
+                                return {"error": parsed_error, "success": False}
+                            else:
+                                return {"error": str(parsed_error), "success": False}
+                        except json.JSONDecodeError:
+                            return {"error": error_body, "success": False}
+                    else:
+                        return {"error": str(error_body), "success": False}
+            else:
+                # Direct return format
+                return handler_result
         else:
-            return {"error": "Custom tool did not return a result", "success": False}
+            return {
+                "error": "Handler function must return a dictionary",
+                "success": False,
+            }
 
     except Exception as e:
         logger.error(f"Error executing custom tool {tool_name}: {str(e)}")
@@ -355,19 +500,30 @@ def get_fallback_tools():
     return []
 
 
-def define_tools(selected_tool_ids=None):
-    """Define available tools for the AI assistant."""
-    return load_tools_from_dynamodb(selected_tool_ids)
+def build_converse_params(
+    model_id: str,
+    messages: List[Dict],
+    system_prompt: str = "",
+    tools: Optional[List[Dict]] = None,
+) -> Dict[str, Any]:
+    """Build converse API parameters to avoid duplication."""
+    params: Dict[str, Any] = {
+        "modelId": model_id,
+        "messages": messages,
+        "inferenceConfig": {
+            "maxTokens": 4096,
+            "temperature": 0.7,
+            "topP": 0.9,
+        },
+    }
 
+    if system_prompt.strip():
+        params["system"] = [{"text": system_prompt}]
 
-def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute a tool based on the tool name and input."""
-    try:
-        # Execute as a custom tool from DynamoDB
-        return execute_custom_tool(tool_name, tool_input)
-    except Exception as e:
-        logger.error(f"Error executing tool {tool_name}: {str(e)}")
-        return {"error": f"Tool execution failed: {str(e)}", "success": False}
+    if tools:
+        params["toolConfig"] = {"tools": tools}
+
+    return params
 
 
 def handler(event, context):
@@ -389,9 +545,7 @@ def handler(event, context):
             "Always use the appropriate tools when they can help answer the user's question. "
             "Use the available tools to provide accurate and helpful responses.",
         )
-        model_id = arguments.get(
-            "modelId", "apac.anthropic.claude-sonnet-4-20250514-v1:0"
-        )
+        model_id = arguments.get("modelId", FALLBACK_MODEL_ID)
         database_ids = arguments.get("databaseIds", [])
         use_tools = arguments.get("useTools", True)
         selected_tool_ids = arguments.get("selectedToolIds", [])
@@ -445,28 +599,19 @@ def handler(event, context):
         if not bedrock_messages:
             raise ValueError("No valid messages found after filtering")
 
-        # Prepare Converse API parameters
-        converse_params = {
-            "modelId": model_id,
-            "messages": bedrock_messages,
-            "inferenceConfig": {
-                "maxTokens": 4096,
-                "temperature": 0.7,
-                "topP": 0.9,
-            },
-        }
-
-        if enhanced_system_prompt.strip():
-            converse_params["system"] = [{"text": enhanced_system_prompt}]
-
-        # Add tools if enabled
-        if use_tools:
-            converse_params["toolConfig"] = {"tools": define_tools(selected_tool_ids)}
+        # Load tools if enabled
+        tools = load_tools_from_dynamodb(selected_tool_ids) if use_tools else []
+        logger.info(f"Tools: {tools}")
 
         # Generate response using Converse API
         logger.info("Invoking Bedrock Converse API...")
+        converse_params = build_converse_params(
+            model_id, bedrock_messages, enhanced_system_prompt, tools
+        )
+        logger.info(f"Converse params: {converse_params}")
         response = bedrock_client.converse(**converse_params)
         logger.info("Bedrock API call successful")
+        logger.info(f"Response: {response}")
 
         # Handle tool use if present
         final_response_text = ""
@@ -497,7 +642,15 @@ def handler(event, context):
                 tool_use_id = tool_use.get("toolUseId")
 
                 logger.info(f"Executing tool: {tool_name}")
-                result = execute_tool(tool_name, tool_input)
+                try:
+                    result = execute_custom_tool(tool_name, tool_input)
+                    logger.info(f"Tool result: {result}")
+                except Exception as e:
+                    logger.error(f"Error executing tool {tool_name}: {str(e)}")
+                    result = {
+                        "error": f"Tool execution failed: {str(e)}",
+                        "success": False,
+                    }
 
                 tool_results.append(
                     {
@@ -507,34 +660,20 @@ def handler(event, context):
                         }
                     }
                 )
+                logger.info(f"Tool results: {tool_results}")
 
             # Add tool results as a user message and get final response
             tool_message = {"role": "user", "content": tool_results}
+            logger.info(f"Tool message: {tool_message}")
 
             bedrock_messages.append({"role": "assistant", "content": content})
             bedrock_messages.append(tool_message)
 
             # Get final response after tool execution
-            final_converse_params = {
-                "modelId": model_id,
-                "messages": bedrock_messages,
-                "inferenceConfig": {
-                    "maxTokens": 4096,
-                    "temperature": 0.7,
-                    "topP": 0.9,
-                },
-            }
-
-            if enhanced_system_prompt.strip():
-                final_converse_params["system"] = [{"text": enhanced_system_prompt}]
-
-            # Include toolConfig when conversation contains tool use/result blocks
-            if use_tools:
-                final_converse_params["toolConfig"] = {
-                    "tools": define_tools(selected_tool_ids)
-                }
-
             logger.info("Getting final response after tool execution...")
+            final_converse_params = build_converse_params(
+                model_id, bedrock_messages, enhanced_system_prompt, tools
+            )
             final_response = bedrock_client.converse(**final_converse_params)
 
             final_output = final_response.get("output", {}).get("message", {})
@@ -570,9 +709,7 @@ def handler(event, context):
 
     except ValueError as e:
         logger.error(f"Validation error in handler: {str(e)}")
-        fallback_model_id = "apac.anthropic.claude-sonnet-4-20250514-v1:0"
-        response_model_id = locals().get("model_id", fallback_model_id)
-
+        response_model_id = locals().get("model_id", FALLBACK_MODEL_ID)
         return {
             "response": f"I apologize, but there was a validation error: {str(e)}",
             "modelId": response_model_id,
@@ -582,10 +719,7 @@ def handler(event, context):
     except Exception as e:
         logger.error(f"Unexpected handler error: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
-
-        fallback_model_id = "apac.anthropic.claude-sonnet-4-20250514-v1:0"
-        response_model_id = locals().get("model_id", fallback_model_id)
-
+        response_model_id = locals().get("model_id", FALLBACK_MODEL_ID)
         return {
             "response": f"I apologize, but I encountered an error while processing your request: {str(e)}",
             "modelId": response_model_id,

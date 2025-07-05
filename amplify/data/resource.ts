@@ -37,15 +37,35 @@ const schema = a.schema({
     databaseFileId: a.string(),
   }),
 
+  // Response structure for tool testing
+  TestToolResponse: a.customType({
+    success: a.boolean().required(),
+    error: a.string(),
+    error_type: a.string(),
+    data: a.json(),
+    tool_name: a.string(),
+    tool_id: a.string(),
+    execution_time_ms: a.integer(),
+    request_id: a.string(),
+    input_used: a.json(),
+    timestamp: a.string(),
+    validation_errors: a.json(),
+    line_number: a.integer(),
+  }),
+
   systemPrompts: a
     .model({
       id: a.id().required(),
       name: a.string().required(),
       content: a.string().required(),
       isActive: a.boolean().default(true),
+      createdAt: a.datetime(),
+      updatedAt: a.datetime(),
+      owner: a.string(),
     })
     .authorization((allow) => [
-      allow.authenticated().to(["read", "create", "update", "delete"]),
+      allow.owner().to(["read", "create", "update", "delete"]),
+      allow.authenticated().to(["read"]),
       allow.guest().to(["read"]),
     ]),
 
@@ -55,6 +75,8 @@ const schema = a.schema({
       name: a.string().required(),
       description: a.string().required(),
       isActive: a.boolean().default(true),
+      createdAt: a.datetime(),
+      updatedAt: a.datetime(),
       owner: a.string(),
     })
     .authorization((allow) => [
@@ -70,7 +92,9 @@ const schema = a.schema({
       fileKey: a.string().required(),
       fileSize: a.integer().required(),
       fileType: a.string().required(),
-      uploadDate: a.datetime().required(),
+      isActive: a.boolean().default(true),
+      createdAt: a.datetime(),
+      updatedAt: a.datetime(),
       owner: a.string(),
     })
     .authorization((allow) => [
@@ -85,8 +109,10 @@ const schema = a.schema({
       description: a.string().required(),
       systemPromptId: a.id().required(),
       databaseIds: a.json().required(),
+      toolIds: a.json(), // Add tool IDs for templates
       isActive: a.boolean().default(true),
-      createdAt: a.datetime().required(),
+      createdAt: a.datetime(),
+      updatedAt: a.datetime(),
       owner: a.string(),
     })
     .authorization((allow) => [
@@ -101,10 +127,11 @@ const schema = a.schema({
       description: a.string().required(),
       inputSchema: a.json().required(), // JSON schema for tool inputs
       executionCode: a.string(), // Python code for tool execution
+      requirements: a.string(), // Pip requirements for tool execution
       isActive: a.boolean().default(true),
       category: a.string(), // Optional category for organizing tools
-      createdAt: a.datetime().required(),
-      updatedAt: a.datetime().required(),
+      createdAt: a.datetime(),
+      updatedAt: a.datetime(),
       owner: a.string(),
     })
     .authorization((allow) => [

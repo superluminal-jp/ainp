@@ -152,20 +152,22 @@ export default function PromptsPage() {
   return (
     <>
       <AppHeader />
-      <div className="min-h-screen bg-background text-foreground">
-        <div className="container mx-auto px-4 py-8">
-          <div className="grid gap-8">
-            {/* Add/Edit Form */}
+      <div className="h-screen bg-background text-foreground flex flex-col">
+        <div className="flex-1 flex">
+          {/* Form Panel */}
+          <div className="w-1/3 border-r border-border p-3">
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5" />
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4" />
                   {isEditing ? "Edit Prompt" : "Create New Prompt"}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Prompt Name</Label>
+              <CardContent className="space-y-3">
+                <div className="space-y-1">
+                  <Label htmlFor="name" className="text-xs">
+                    Prompt Name
+                  </Label>
                   <Input
                     id="name"
                     placeholder="e.g., Research Assistant, Code Helper"
@@ -173,11 +175,14 @@ export default function PromptsPage() {
                     onChange={(e) =>
                       setFormData((prev) => ({ ...prev, name: e.target.value }))
                     }
+                    className="h-7 text-xs"
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="content">Prompt Content</Label>
+                <div className="space-y-1">
+                  <Label htmlFor="content" className="text-xs">
+                    Prompt Content
+                  </Label>
                   <Textarea
                     id="content"
                     placeholder="Enter the system prompt content..."
@@ -188,91 +193,97 @@ export default function PromptsPage() {
                         content: e.target.value,
                       }))
                     }
-                    rows={6}
+                    className="min-h-32 text-xs"
                   />
                 </div>
 
                 <div className="flex gap-2">
                   <Button
                     onClick={isEditing ? handleUpdatePrompt : handleAddPrompt}
+                    size="sm"
+                    className="flex-1 h-7 text-xs"
                     disabled={
                       !formData.name.trim() ||
                       !formData.content.trim() ||
                       loading
                     }
                   >
-                    <Save className="h-4 w-4 mr-2" />
-                    {loading
-                      ? "Saving..."
-                      : isEditing
-                        ? "Update"
-                        : "Create"}{" "}
-                    Prompt
+                    <Save className="h-3 w-3 mr-1" />
+                    {loading ? "Saving..." : isEditing ? "Update" : "Create"}
                   </Button>
                   {isEditing && (
                     <Button
                       variant="outline"
                       onClick={cancelEdit}
+                      size="sm"
+                      className="flex-1 h-7 text-xs"
                       disabled={loading}
                     >
-                      <X className="h-4 w-4 mr-2" />
+                      <X className="h-3 w-3 mr-1" />
                       Cancel
                     </Button>
                   )}
                 </div>
               </CardContent>
             </Card>
+          </div>
 
-            {/* System Prompts */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>System Prompts</CardTitle>
-                  <Badge variant="outline">
-                    {systemPrompts.length} Prompts
-                  </Badge>
+          {/* Prompts List */}
+          <div className="flex-1 p-3">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold">System Prompts</h2>
+              <Badge variant="outline" className="text-xs">
+                {systemPrompts.length} Prompts
+              </Badge>
+            </div>
+
+            <ScrollArea className="h-full">
+              {systemPrompts.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p className="text-sm">No system prompts created yet</p>
+                  <p className="text-xs">
+                    Create your first system prompt above
+                  </p>
                 </div>
-              </CardHeader>
-              <CardContent>
-                {systemPrompts.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No system prompts created yet</p>
-                    <p className="text-sm">
-                      Create your first system prompt above
-                    </p>
-                  </div>
-                ) : (
-                  <ScrollArea className="h-96">
-                    <div className="space-y-4">
-                      {systemPrompts.map((prompt) => (
-                        <div
-                          key={prompt.id}
-                          className="flex items-start justify-between p-4 border rounded-lg"
-                        >
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <h4 className="font-medium">{prompt.name}</h4>
-                            </div>
-                            <p className="text-sm text-muted-foreground mb-3">
-                              {prompt.content}
-                            </p>
-                            <div className="flex items-center gap-2">
+              ) : (
+                <div className="space-y-2">
+                  {systemPrompts.map((prompt) => (
+                    <Card
+                      key={prompt.id}
+                      className={`hover:bg-muted/50 ${
+                        !(prompt.isActive ?? true) ? "opacity-50" : ""
+                      }`}
+                    >
+                      <CardContent className="p-3">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center space-x-2">
+                              <h4 className="text-sm font-medium">
+                                {prompt.name}
+                              </h4>
                               <Switch
+                                checked={prompt.isActive ?? true}
                                 onCheckedChange={() =>
                                   togglePromptActive(prompt.id)
                                 }
+                                className="scale-75"
                               />
                               <Label className="text-xs">Active</Label>
                             </div>
+                            <p className="text-xs text-muted-foreground line-clamp-2">
+                              {prompt.content}
+                            </p>
                           </div>
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 ml-2">
                             <Button
                               size="sm"
                               variant="ghost"
                               onClick={() =>
                                 copyPromptContent(prompt.content, prompt.id)
                               }
+                              className="h-6 w-6 p-0"
+                              title="Copy prompt content"
                             >
                               {copiedId === prompt.id ? (
                                 <Check className="h-3 w-3" />
@@ -284,6 +295,8 @@ export default function PromptsPage() {
                               size="sm"
                               variant="ghost"
                               onClick={() => handleEditPrompt(prompt)}
+                              className="h-6 w-6 p-0"
+                              title="Edit prompt"
                             >
                               <Edit className="h-3 w-3" />
                             </Button>
@@ -291,17 +304,19 @@ export default function PromptsPage() {
                               size="sm"
                               variant="ghost"
                               onClick={() => handleDeletePrompt(prompt.id)}
+                              className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                              title="Delete prompt"
                             >
                               <Trash2 className="h-3 w-3" />
                             </Button>
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                )}
-              </CardContent>
-            </Card>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
           </div>
         </div>
       </div>

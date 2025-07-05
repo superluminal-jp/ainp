@@ -50,36 +50,7 @@ export const chatBedrockToolsFunction = defineFunction(
       })
     );
 
-    // Add IAM permissions for S3 (for FAISS indexes)
-    fn.addToRolePolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: [
-          "s3:GetObject",
-          "s3:GetObjectVersion",
-          "s3:PutObject",
-          "s3:DeleteObject",
-          "s3:ListBucket",
-        ],
-        resources: ["*"],
-      })
-    );
-
-    // Add IAM permissions for DynamoDB (for tool specs)
-    fn.addToRolePolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:UpdateItem",
-          "dynamodb:DeleteItem",
-          "dynamodb:Query",
-          "dynamodb:Scan",
-        ],
-        resources: ["*"],
-      })
-    );
+    // S3 and DynamoDB permissions will be handled by backend.ts
 
     return fn;
   },

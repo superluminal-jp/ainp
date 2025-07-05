@@ -1222,7 +1222,8 @@ export default function DatabasesPage() {
           <div className="w-1/3 border-r border-border p-3">
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Database className="h-4 w-4" />
                   {isEditing ? "Edit Database" : "Add New Database"}
                 </CardTitle>
               </CardHeader>
@@ -1460,6 +1461,9 @@ export default function DatabasesPage() {
                     ? `${selectedDatabase.name} - Files`
                     : "Databases"}
                 </h2>
+                <Badge variant="outline" className="text-xs">
+                  {databases.length} Databases
+                </Badge>
               </div>
             </div>
 
@@ -1842,8 +1846,9 @@ export default function DatabasesPage() {
                                   onClick={(e) => e.stopPropagation()}
                                   className="scale-75"
                                 />
+                                <Label className="text-xs">Active</Label>
                               </div>
-                              <p className="text-xs text-muted-foreground">
+                              <p className="text-xs text-muted-foreground line-clamp-2">
                                 {database.description}
                               </p>
                             </div>
@@ -1857,6 +1862,7 @@ export default function DatabasesPage() {
                                 }}
                                 className="h-6 w-6 p-0"
                                 disabled={loading}
+                                title="Edit database"
                               >
                                 <Edit className="h-3 w-3" />
                               </Button>
@@ -1867,8 +1873,9 @@ export default function DatabasesPage() {
                                   e.stopPropagation();
                                   handleDeleteDatabase(database.id);
                                 }}
-                                className="h-6 w-6 p-0"
+                                className="h-6 w-6 p-0 text-destructive hover:text-destructive"
                                 disabled={loading}
+                                title="Delete database"
                               >
                                 <Trash2 className="h-3 w-3" />
                               </Button>
