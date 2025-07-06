@@ -535,6 +535,30 @@ def handler(event, context):
     setFormData((prev) => ({ ...prev, requirements }));
   };
 
+  const handleApplyInputSchema = (suggestedSchema: {
+    properties: Record<string, SchemaProperty>;
+    required?: string[];
+  }) => {
+    setFormData((prev) => ({
+      ...prev,
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...prev.inputSchema.properties,
+          ...suggestedSchema.properties,
+        },
+        required: suggestedSchema.required
+          ? Array.from(
+              new Set([
+                ...prev.inputSchema.required,
+                ...suggestedSchema.required,
+              ])
+            )
+          : prev.inputSchema.required,
+      },
+    }));
+  };
+
   // Chat assistant methods
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -597,7 +621,16 @@ Current tool being worked on:
     "name": "Suggested tool name (if applicable)",
     "description": "Suggested tool description (if applicable)",
     "executionCode": "Complete Python Lambda function code (if applicable)",
-    "requirements": "pip packages separated by newlines (if applicable)"
+    "requirements": "pip packages separated by newlines (if applicable)",
+    "inputSchema": {
+      "properties": {
+        "param1": {
+          "type": "string",
+          "description": "Description of param1"
+        }
+      },
+      "required": ["param1"]
+    }
   },
   "tips": ["Tip 1 about Lambda best practices", "Tip 2 about error handling", "Tip 3 about tool development"]
 }
@@ -606,6 +639,7 @@ Always provide:
 - A helpful message with your advice
 - Specific suggestions for any relevant fields (name, description, code, requirements)
 - 2-3 practical tips for tool development and Lambda functions
+- Use def handler(event, context) as the function name
 
 When suggesting code, always include:
 - Proper error handling with try/catch blocks
@@ -613,6 +647,12 @@ When suggesting code, always include:
 - Input validation and parameter extraction
 - Clear documentation and comments
 - Appropriate imports and dependencies
+
+When suggesting input schema, provide:
+- Clear, descriptive property names
+- Appropriate data types (string, number, boolean, array)
+- Detailed descriptions for each property
+- Proper required field specifications
 
 Make your suggestions actionable and immediately useful. Focus on working, production-ready code.`;
 
@@ -649,6 +689,21 @@ Make your suggestions actionable and immediately useful. Focus on working, produ
                   requirements: {
                     type: "string",
                     description: "Suggested pip requirements",
+                  },
+                  inputSchema: {
+                    type: "object",
+                    properties: {
+                      properties: {
+                        type: "object",
+                        description: "Schema properties object",
+                      },
+                      required: {
+                        type: "array",
+                        items: { type: "string" },
+                        description: "Required property names",
+                      },
+                    },
+                    description: "Suggested input schema structure",
                   },
                 },
                 description: "Suggested values for the tool form fields",
@@ -709,6 +764,9 @@ Make your suggestions actionable and immediately useful. Focus on working, produ
           }
           if (suggestions.requirements && suggestions.requirements.trim()) {
             handleApplyRequirements(suggestions.requirements.trim());
+          }
+          if (suggestions.inputSchema && suggestions.inputSchema.properties) {
+            handleApplyInputSchema(suggestions.inputSchema);
           }
         }
       }
