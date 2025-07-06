@@ -8,14 +8,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { useState, useEffect, useRef } from "react";
 import { useSimpleHeader } from "@/components/use-page-header";
 import { AppHeader } from "@/components/app-header";
@@ -29,7 +21,6 @@ import {
   Check,
   Bot,
   Send,
-  Sparkles,
   User,
 } from "lucide-react";
 
@@ -311,7 +302,7 @@ Make your suggestions actionable and immediately useful. Focus on best practices
           }
         } catch (error) {
           // If parsing fails, use the raw response
-          console.log("Using raw response text");
+          console.log("Using raw response text", error);
         }
 
         const assistantMessage: ChatMessage = {

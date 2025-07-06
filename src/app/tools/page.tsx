@@ -15,14 +15,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { useState, useEffect, useRef } from "react";
 import { useSimpleHeader } from "@/components/use-page-header";
 import { AppHeader } from "@/components/app-header";
@@ -36,7 +28,6 @@ import {
   Code,
   Bot,
   Send,
-  Sparkles,
   User,
 } from "lucide-react";
 
@@ -694,7 +685,7 @@ Make your suggestions actionable and immediately useful. Focus on working, produ
           }
         } catch (error) {
           // If parsing fails, use the raw response
-          console.log("Using raw response text");
+          console.log("Using raw response text", error);
         }
 
         const assistantMessage: ChatMessage = {
