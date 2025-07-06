@@ -28,13 +28,3 @@ export interface Template {
   databases: string[];
   tools?: string[];
 }
-
-export interface GeneratedPage {
-  id: string;
-  name: string;
-  path: string;
-  template: string;
-  customCode: string;
-  createdAt: Date;
-  description: string;
-}

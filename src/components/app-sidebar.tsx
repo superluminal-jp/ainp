@@ -33,8 +33,6 @@ import {
   FileText,
   Zap,
   Home,
-  Sparkles,
-  Code,
 } from "lucide-react";
 
 // Navigation items for the sidebar
@@ -74,18 +72,6 @@ const navigationItems = [
     url: "/templates",
     icon: Zap,
     description: "Pre-built configurations",
-  },
-  {
-    title: "Page Generator",
-    url: "/generator",
-    icon: Sparkles,
-    description: "Generate new pages",
-  },
-  {
-    title: "Generated Pages",
-    url: "/generated",
-    icon: Code,
-    description: "View generated content",
   },
 ];
 
@@ -158,15 +144,7 @@ export function AppSidebar() {
                       <MessageSquare className="h-3 w-3 mr-2" />
                       New Chat
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full justify-start text-xs"
-                      onClick={() => handleNavigation("/generator")}
-                    >
-                      <Sparkles className="h-3 w-3 mr-2" />
-                      Generate Page
-                    </Button>
+
                   </div>
                 </SidebarGroupContent>
               </SidebarGroup>

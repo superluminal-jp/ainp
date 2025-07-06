@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     "Chat",
     "Tools",
     "Database",
-    "Page Generator",
+
     "Machine Learning",
     "Natural Language Processing",
     "Automation",
