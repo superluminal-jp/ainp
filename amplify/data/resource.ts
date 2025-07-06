@@ -24,6 +24,7 @@ const schema = a.schema({
     modelId: a.string(),
     usage: a.json(), // Usage statistics from the model
     toolsUsed: a.integer(), // Number of tools used in the response
+    structuredOutput: a.boolean(), // Whether structured output was used
   }),
 
   // Response structure for embedding files
@@ -162,6 +163,7 @@ const schema = a.schema({
       databaseIds: a.string().array(), // Add database IDs for RAG
       useTools: a.boolean(), // Enable/disable tool functionality
       selectedToolIds: a.string().array(), // Add selected custom tool IDs
+      responseFormat: a.json(), // Add structured output format
     })
     .returns(a.ref("ChatToolsResponse"))
     .authorization((allow) => [allow.authenticated()])

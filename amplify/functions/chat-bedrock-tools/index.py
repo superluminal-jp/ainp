@@ -505,6 +505,7 @@ def build_converse_params(
     messages: List[Dict],
     system_prompt: str = "",
     tools: Optional[List[Dict]] = None,
+    response_format: Optional[Dict] = None,
 ) -> Dict[str, Any]:
     """Build converse API parameters to avoid duplication."""
     params: Dict[str, Any] = {
@@ -516,6 +517,10 @@ def build_converse_params(
             "topP": 0.9,
         },
     }
+
+    # Add structured output support
+    if response_format:
+        params["inferenceConfig"]["responseFormat"] = response_format
 
     if system_prompt.strip():
         params["system"] = [{"text": system_prompt}]
@@ -549,12 +554,16 @@ def handler(event, context):
         database_ids = arguments.get("databaseIds", [])
         use_tools = arguments.get("useTools", True)
         selected_tool_ids = arguments.get("selectedToolIds", [])
+        response_format = arguments.get("responseFormat", None)
 
         logger.info(
-            f"Request configuration - Model: {model_id}, Tools: {use_tools}, Selected tools: {len(selected_tool_ids)}"
+            f"Request configuration - Model: {model_id}, Tools: {use_tools}, "
+            f"Selected tools: {len(selected_tool_ids)}, Structured output: {response_format is not None}"
         )
         if selected_tool_ids:
             logger.info(f"Selected tool IDs: {selected_tool_ids}")
+        if response_format:
+            logger.info(f"Using structured output format: {response_format}")
 
         if not isinstance(messages_data, list) or not messages_data:
             raise ValueError("Messages array is required and must be non-empty")
@@ -606,7 +615,7 @@ def handler(event, context):
         # Generate response using Converse API
         logger.info("Invoking Bedrock Converse API...")
         converse_params = build_converse_params(
-            model_id, bedrock_messages, enhanced_system_prompt, tools
+            model_id, bedrock_messages, enhanced_system_prompt, tools, response_format
         )
         logger.info(f"Converse params: {converse_params}")
         response = bedrock_client.converse(**converse_params)
@@ -672,7 +681,11 @@ def handler(event, context):
             # Get final response after tool execution
             logger.info("Getting final response after tool execution...")
             final_converse_params = build_converse_params(
-                model_id, bedrock_messages, enhanced_system_prompt, tools
+                model_id,
+                bedrock_messages,
+                enhanced_system_prompt,
+                tools,
+                response_format,
             )
             final_response = bedrock_client.converse(**final_converse_params)
 
@@ -705,6 +718,7 @@ def handler(event, context):
             "modelId": model_id,
             "usage": usage,
             "toolsUsed": len(tool_use_blocks) if tool_use_blocks else 0,
+            "structuredOutput": response_format is not None,
         }
 
     except ValueError as e:

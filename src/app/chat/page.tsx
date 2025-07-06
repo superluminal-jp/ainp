@@ -24,6 +24,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Toggle } from "@/components/ui/toggle";
+import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import {
   Tooltip,
@@ -57,6 +58,7 @@ import {
   RefreshCcw,
   Zap,
   Mic,
+  Code,
 } from "lucide-react";
 import {
   Message,
@@ -100,6 +102,29 @@ export default function ChatPage() {
     { id: string; name: string; description: string; isActive: boolean }[]
   >([]);
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
+  const [useStructuredOutput, setUseStructuredOutput] = useState(false);
+  const [structuredOutputSchema, setStructuredOutputSchema] =
+    useState<string>(`{
+  "type": "object",
+  "properties": {
+    "answer": {
+      "type": "string",
+      "description": "The main response to the user's question"
+    },
+    "confidence": {
+      "type": "number",
+      "description": "Confidence level from 0 to 1"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of sources used for the response"
+    }
+  },
+  "required": ["answer"]
+}`);
 
   // Tools are automatically enabled when tools are selected
   const useTools = useMemo(() => selectedTools.length > 0, [selectedTools]);
@@ -262,6 +287,10 @@ export default function ChatPage() {
           );
         }
 
+        // Reset structured output when applying template
+        setUseStructuredOutput(false);
+        console.log("🔧 [ChatPage] Structured output disabled for template application");
+
         console.log(
           `✅ [ChatPage] Template applied successfully: ${template.name}`
         );
@@ -286,6 +315,7 @@ export default function ChatPage() {
       setSelectedDatabases([]);
       setSelectedTools([]);
       setSelectedModelId("apac.anthropic.claude-sonnet-4-20250514-v1:0"); // Reset to default model
+      setUseStructuredOutput(false); // Reset structured output
       console.log("✅ [ChatPage] Template selections cleared");
       toast.info("Template cleared");
     }
@@ -339,6 +369,20 @@ export default function ChatPage() {
           </Tooltip>
         )}
 
+        {useStructuredOutput && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge variant="secondary" className="text-xs cursor-pointer">
+                <Code className="h-3 w-3 mr-1" />
+                JSON Schema
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Structured output enabled with JSON schema</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
+
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="ghost" size="icon">
@@ -364,7 +408,7 @@ export default function ChatPage() {
         </Popover>
       </div>
     ),
-    [selectedDatabases, selectedTools, customTools, clearChat]
+    [selectedDatabases, selectedTools, customTools, clearChat, useStructuredOutput]
   );
 
   // Memoize description to prevent unnecessary re-renders
@@ -382,6 +426,11 @@ export default function ChatPage() {
     // Add tools info
     if (useTools) {
       parts.push("with tools enabled");
+    }
+
+    // Add structured output info
+    if (useStructuredOutput) {
+      parts.push("with structured output");
     }
 
     if (selectedTemplate && selectedTemplate !== "none") {
@@ -409,6 +458,7 @@ export default function ChatPage() {
     systemPrompts,
     selectedModelId,
     useTools,
+    useStructuredOutput,
   ]);
 
   useEffect(() => {
@@ -569,6 +619,19 @@ export default function ChatPage() {
         }),
       });
 
+            // Parse structured output schema if enabled
+      let responseFormat = undefined;
+      if (useStructuredOutput) {
+        try {
+          responseFormat = { json: JSON.parse(structuredOutputSchema) };
+        } catch (error) {
+          console.error("❌ [ChatPage] Invalid JSON schema for structured output:", error);
+          toast.error("Invalid JSON schema for structured output. Please check the format.");
+          setIsTyping(false);
+          return;
+        }
+      }
+
       const requestPayload = {
         messages: validMessages.map((msg) => ({
           role: msg.role,
@@ -580,6 +643,7 @@ export default function ChatPage() {
         databaseIds: selectedDatabases, // Add selected databases for RAG
         useTools: useTools, // Enable/disable tool functionality
         selectedToolIds: selectedTools, // Add selected custom tools
+        responseFormat: responseFormat, // Add structured output format
       };
 
       console.log("📤 [ChatPage] Calling Bedrock function with payload:", {
@@ -690,8 +754,13 @@ export default function ChatPage() {
 
         setMessages((prev) => [...prev, aiResponse]);
 
-        // Show success message with tool usage info
+        // Show success message with tool usage and structured output info
         const toolsUsedCount = responseData.toolsUsed || 0;
+        const isStructuredOutput = responseData.structuredOutput || false;
+        
+        let successMessage = "Response generated";
+        const features = [];
+        
         if (toolsUsedCount > 0) {
           const toolNames = selectedTools
             .map((toolId) => {
@@ -699,12 +768,18 @@ export default function ChatPage() {
               return tool ? tool.name : toolId;
             })
             .join(", ");
-          toast.success(
-            `Response generated using ${toolsUsedCount} tool${toolsUsedCount > 1 ? "s" : ""}: ${toolNames}!`
-          );
-        } else {
-          toast.success("Response generated!");
+          features.push(`using ${toolsUsedCount} tool${toolsUsedCount > 1 ? "s" : ""}: ${toolNames}`);
         }
+        
+        if (isStructuredOutput) {
+          features.push("with structured output");
+        }
+        
+        if (features.length > 0) {
+          successMessage += " " + features.join(" ");
+        }
+        
+        toast.success(successMessage + "!");
 
         console.log(
           "🎉 [ChatPage] AI response added to conversation successfully"
@@ -1261,6 +1336,44 @@ export default function ChatPage() {
                       </div>
                     </PopoverContent>
                   </Popover>
+                </div>
+
+                {/* Structured Output Section */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Structured Output
+                  </Label>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      checked={useStructuredOutput}
+                      onCheckedChange={setUseStructuredOutput}
+                      className="scale-75"
+                    />
+                    <Label className="text-xs">
+                      Enable JSON Schema Response
+                    </Label>
+                  </div>
+
+                  {useStructuredOutput && (
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium text-muted-foreground">
+                        JSON Schema
+                      </Label>
+                      <Textarea
+                        value={structuredOutputSchema}
+                        onChange={(e) =>
+                          setStructuredOutputSchema(e.target.value)
+                        }
+                        placeholder="Enter JSON schema for structured output..."
+                        className="min-h-24 text-xs font-mono"
+                        rows={4}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Define the JSON schema for structured responses. The
+                        model will return responses following this format.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

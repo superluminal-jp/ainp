@@ -15,10 +15,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useState, useEffect } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { useState, useEffect, useRef } from "react";
 import { useSimpleHeader } from "@/components/use-page-header";
 import { AppHeader } from "@/components/app-header";
-import { Edit, Trash2, Wrench, Save, X, Check, Code } from "lucide-react";
+import {
+  Edit,
+  Trash2,
+  Wrench,
+  Save,
+  X,
+  Check,
+  Code,
+  Bot,
+  Send,
+  Sparkles,
+  User,
+} from "lucide-react";
 
 import type { Schema } from "../../../amplify/data/resource";
 import { generateClient } from "aws-amplify/data";
@@ -53,6 +73,13 @@ interface ToolSpec {
   executionCode?: string;
   requirements?: string;
   isActive: boolean;
+}
+
+// Chat message interface
+interface ChatMessage {
+  role: "user" | "assistant";
+  text: string;
+  timestamp: string;
 }
 
 export default function ToolsPage() {
@@ -188,6 +215,12 @@ def handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
   });
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Chat assistant state
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [inputMessage, setInputMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Schema property management
   const [newProperty, setNewProperty] = useState({
@@ -494,21 +527,235 @@ def handler(event, context):
     });
   };
 
+  // Handlers for AI assistant suggestions
+  const handleApplyName = (name: string) => {
+    setFormData((prev) => ({ ...prev, name }));
+  };
+
+  const handleApplyDescription = (description: string) => {
+    setFormData((prev) => ({ ...prev, description }));
+  };
+
+  const handleApplyCode = (code: string) => {
+    setFormData((prev) => ({ ...prev, executionCode: code }));
+  };
+
+  const handleApplyRequirements = (requirements: string) => {
+    setFormData((prev) => ({ ...prev, requirements }));
+  };
+
+  // Chat assistant methods
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  // Initialize with a helpful system message
+  useEffect(() => {
+    if (messages.length === 0) {
+      setMessages([
+        {
+          role: "assistant",
+          text: "Hello! I'm here to help you create and enhance custom tools. I can:\n\n• Generate tool names and descriptions\n• Create Python execution code for your tools\n• Suggest input schema properties\n• Help with package requirements\n• Provide code examples and best practices\n• Debug and improve existing tool code\n\nWhat would you like to work on today?",
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+    }
+  }, [messages.length]);
+
+  // Auto-scroll when messages change
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isLoading]);
+
+  const sendMessage = async () => {
+    if (!inputMessage.trim() || isLoading) return;
+
+    const userMessage: ChatMessage = {
+      role: "user",
+      text: inputMessage,
+      timestamp: new Date().toISOString(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setInputMessage("");
+    setIsLoading(true);
+
+    try {
+      const systemPrompt = `You are a helpful AI assistant specializing in creating custom tools and Python code for AWS Lambda functions.
+
+Your role is to help users create, improve, and optimize custom tools with proper execution code. You should:
+
+1. **Generate Names**: Create clear, descriptive names for tools based on their purpose
+2. **Create Descriptions**: Write detailed descriptions explaining what the tool does
+3. **Write Code**: Generate Python code for AWS Lambda handler functions that follow best practices
+4. **Suggest Schema**: Recommend input schema properties and types
+5. **Package Requirements**: Suggest pip packages needed for the tool functionality
+6. **Debug Code**: Help fix issues in existing tool code
+7. **Best Practices**: Provide guidance on error handling, response formats, and Lambda patterns
+
+Current tool being worked on:
+- Name: "${formData.name}"
+- Description: "${formData.description}"
+- Requirements: "${formData.requirements}"
+- Has execution code: ${formData.executionCode ? "Yes" : "No"}
+
+**IMPORTANT**: You must respond in JSON format with the following structure:
+{
+  "message": "Your helpful response and guidance to the user",
+  "suggestions": {
+    "name": "Suggested tool name (if applicable)",
+    "description": "Suggested tool description (if applicable)",
+    "executionCode": "Complete Python Lambda function code (if applicable)",
+    "requirements": "pip packages separated by newlines (if applicable)"
+  },
+  "tips": ["Tip 1 about Lambda best practices", "Tip 2 about error handling", "Tip 3 about tool development"]
+}
+
+Always provide:
+- A helpful message with your advice
+- Specific suggestions for any relevant fields (name, description, code, requirements)
+- 2-3 practical tips for tool development and Lambda functions
+
+When suggesting code, always include:
+- Proper error handling with try/catch blocks
+- AWS Lambda response format with statusCode and body
+- Input validation and parameter extraction
+- Clear documentation and comments
+- Appropriate imports and dependencies
+
+Make your suggestions actionable and immediately useful. Focus on working, production-ready code.`;
+
+      const response = await client.queries.chatWithBedrockTools({
+        messages: messages.concat(userMessage),
+        systemPrompt,
+        modelId: "apac.anthropic.claude-sonnet-4-20250514-v1:0",
+        useTools: false,
+        databaseIds: [],
+        selectedToolIds: [],
+        responseFormat: {
+          json: {
+            type: "object",
+            properties: {
+              message: {
+                type: "string",
+                description: "The main response message to the user",
+              },
+              suggestions: {
+                type: "object",
+                properties: {
+                  name: {
+                    type: "string",
+                    description: "Suggested tool name",
+                  },
+                  description: {
+                    type: "string",
+                    description: "Suggested tool description",
+                  },
+                  executionCode: {
+                    type: "string",
+                    description: "Suggested Python execution code",
+                  },
+                  requirements: {
+                    type: "string",
+                    description: "Suggested pip requirements",
+                  },
+                },
+                description: "Suggested values for the tool form fields",
+              },
+              tips: {
+                type: "array",
+                items: {
+                  type: "string",
+                },
+                description: "Helpful tips for tool development",
+              },
+            },
+            required: ["message"],
+          },
+        },
+      });
+
+      if (response.data) {
+        let responseText = response.data.response;
+        let parsedResponse = null;
+
+        // Try to parse structured response
+        try {
+          parsedResponse = JSON.parse(responseText);
+          if (parsedResponse && parsedResponse.message) {
+            responseText = parsedResponse.message;
+
+            // Add tips if available
+            if (parsedResponse.tips && Array.isArray(parsedResponse.tips)) {
+              const tips = parsedResponse.tips as string[];
+              responseText +=
+                "\n\nTips:\n" + tips.map((tip) => `• ${tip}`).join("\n");
+            }
+          }
+        } catch (error) {
+          // If parsing fails, use the raw response
+          console.log("Using raw response text");
+        }
+
+        const assistantMessage: ChatMessage = {
+          role: "assistant",
+          text: responseText,
+          timestamp: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, assistantMessage]);
+
+        // Auto-apply suggestions if available
+        if (parsedResponse && parsedResponse.suggestions) {
+          const suggestions = parsedResponse.suggestions;
+          if (suggestions.name && suggestions.name.trim()) {
+            handleApplyName(suggestions.name.trim());
+          }
+          if (suggestions.description && suggestions.description.trim()) {
+            handleApplyDescription(suggestions.description.trim());
+          }
+          if (suggestions.executionCode && suggestions.executionCode.trim()) {
+            handleApplyCode(suggestions.executionCode.trim());
+          }
+          if (suggestions.requirements && suggestions.requirements.trim()) {
+            handleApplyRequirements(suggestions.requirements.trim());
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error sending message:", error);
+      const errorMessage: ChatMessage = {
+        role: "assistant",
+        text: "I apologize, but I encountered an error while processing your message. Please try again.",
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
+
   return (
     <>
       <AppHeader />
-      <div className="h-screen bg-background text-foreground flex flex-col">
+      <div className="h-[calc(100vh-5rem)] bg-background text-foreground flex">
         <div className="flex-1 flex">
           {/* Form Panel */}
-          <div className="w-1/3 border-r border-border p-3">
-            <Card>
+          <div className="w-1/4 border-r border-border p-3">
+            <Card className="h-full flex flex-col">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Wrench className="h-4 w-4" />
                   {isEditing ? "Edit Tool" : "Create New Tool"}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="flex-1 flex flex-col space-y-3 overflow-y-auto">
                 <div className="space-y-1">
                   <Label htmlFor="name" className="text-xs">
                     Tool Name
@@ -541,7 +788,7 @@ def handler(event, context):
                         description: e.target.value,
                       }))
                     }
-                    className="min-h-16 text-xs"
+                    className="min-h-20 text-xs resize-none"
                   />
                 </div>
 
@@ -550,8 +797,8 @@ def handler(event, context):
                   <Label className="text-xs">Input Schema</Label>
 
                   {/* Add new property */}
-                  <div className="grid grid-cols-5 gap-1 items-end">
-                    <div>
+                  <div className="grid grid-cols-5 gap-1">
+                    <div className="space-y-1">
                       <Label className="text-xs">Property</Label>
                       <Input
                         placeholder="param_name"
@@ -562,10 +809,10 @@ def handler(event, context):
                             name: e.target.value,
                           }))
                         }
-                        className="h-6 text-xs"
+                        className="h-8 text-xs"
                       />
                     </div>
-                    <div>
+                    <div className="space-y-1">
                       <Label className="text-xs">Type</Label>
                       <Select
                         value={newProperty.type}
@@ -573,7 +820,7 @@ def handler(event, context):
                           setNewProperty((prev) => ({ ...prev, type: value }))
                         }
                       >
-                        <SelectTrigger className="h-6 text-xs">
+                        <SelectTrigger className="h-8 text-xs">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -584,7 +831,7 @@ def handler(event, context):
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="col-span-2">
+                    <div className="col-span-2 space-y-1">
                       <Label className="text-xs">Description</Label>
                       <Input
                         placeholder="Parameter description"
@@ -595,25 +842,25 @@ def handler(event, context):
                             description: e.target.value,
                           }))
                         }
-                        className="h-6 text-xs"
+                        className="h-8 text-xs"
                       />
                     </div>
-                    <div className="flex items-center space-x-1">
-                      <input
-                        type="checkbox"
-                        id="required"
-                        checked={newProperty.required}
-                        onChange={(e) =>
-                          setNewProperty((prev) => ({
-                            ...prev,
-                            required: e.target.checked,
-                          }))
-                        }
-                        className="rounded"
-                      />
-                      <Label htmlFor="required" className="text-xs">
-                        Required
-                      </Label>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Required</Label>
+                      <div className="flex items-center justify-center h-8">
+                        <input
+                          type="checkbox"
+                          id="required"
+                          checked={newProperty.required}
+                          onChange={(e) =>
+                            setNewProperty((prev) => ({
+                              ...prev,
+                              required: e.target.checked,
+                            }))
+                          }
+                          className="rounded"
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -688,7 +935,7 @@ def handler(event, context):
                         requirements: e.target.value,
                       }))
                     }
-                    className="min-h-16 text-xs font-mono"
+                    className="min-h-20 text-xs font-mono resize-none"
                   />
                   <p className="text-xs text-muted-foreground">
                     List pip packages (one per line) that this tool requires.
@@ -696,7 +943,7 @@ def handler(event, context):
                 </div>
 
                 {/* Execution Code Section */}
-                <div className="space-y-1">
+                <div className="space-y-1 flex-1 flex flex-col">
                   <Label htmlFor="executionCode" className="text-xs">
                     Execution Code (Python)
                   </Label>
@@ -748,7 +995,7 @@ def handler(event, context):
                         executionCode: e.target.value,
                       }))
                     }
-                    className="min-h-32 text-xs font-mono"
+                    className="flex-1 text-xs font-mono resize-none"
                   />
                 </div>
 
@@ -793,12 +1040,118 @@ def handler(event, context):
                     </Button>
                   )}
                 </div>
+
+                {/* AI Assistant Info */}
+                <div className="pt-2 border-t">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-muted-foreground">
+                      AI Assistant available in chat panel →
+                    </span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Chat Assistant Panel */}
+          <div className="w-1/3 border-r border-border p-3">
+            <Card className="h-full flex flex-col">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Bot className="h-4 w-4" />
+                  Tool Assistant
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex-1 flex flex-col min-h-0 p-3">
+                <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                  <ScrollArea className="flex-1 pr-4 h-0">
+                    <div className="space-y-4 p-2">
+                      {messages.map((message, index) => (
+                        <div
+                          key={index}
+                          className={`flex ${
+                            message.role === "user"
+                              ? "justify-end"
+                              : "justify-start"
+                          }`}
+                        >
+                          <div
+                            className={`max-w-[80%] rounded-lg px-3 py-2 ${
+                              message.role === "user"
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-muted"
+                            }`}
+                          >
+                            <div className="flex items-start gap-2">
+                              {message.role === "assistant" && (
+                                <Bot className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                              )}
+                              {message.role === "user" && (
+                                <User className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                              )}
+                              <div className="flex-1">
+                                <div className="text-sm whitespace-pre-wrap">
+                                  {message.text}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {isLoading && (
+                        <div className="flex justify-start">
+                          <div className="bg-muted rounded-lg px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <Bot className="h-4 w-4" />
+                              <div className="flex gap-1">
+                                <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
+                                <div
+                                  className="w-2 h-2 bg-current rounded-full animate-bounce"
+                                  style={{ animationDelay: "0.1s" }}
+                                ></div>
+                                <div
+                                  className="w-2 h-2 bg-current rounded-full animate-bounce"
+                                  style={{ animationDelay: "0.2s" }}
+                                ></div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      <div ref={messagesEndRef} />
+                    </div>
+                  </ScrollArea>
+
+                  <div className="border-t pt-4 mt-4">
+                    <div className="flex gap-2">
+                      <Textarea
+                        value={inputMessage}
+                        onChange={(e) => setInputMessage(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        placeholder="Ask me to help generate tool code, schema, or requirements..."
+                        className="flex-1 resize-none"
+                        rows={2}
+                      />
+                      <Button
+                        onClick={sendMessage}
+                        disabled={!inputMessage.trim() || isLoading}
+                        size="sm"
+                        className="px-3"
+                      >
+                        <Send className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      Press Enter to send, Shift+Enter for new line
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </div>
 
           {/* Tools List */}
-          <div className="flex-1 p-3">
+          <div className="flex-1 p-3 flex flex-col">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold">Custom Tools</h2>
               <Badge variant="outline" className="text-xs">
@@ -806,7 +1159,7 @@ def handler(event, context):
               </Badge>
             </div>
 
-            <ScrollArea className="h-full">
+            <ScrollArea className="flex-1">
               {toolSpecs.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Wrench className="h-12 w-12 mx-auto mb-4 opacity-50" />
