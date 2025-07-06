@@ -4,14 +4,8 @@ import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { useSimpleHeader } from "@/components/use-page-header";
 import { AppHeader } from "@/components/app-header";
-import {
-  MessageSquare,
-  Database,
-  Wrench,
-  FileText,
-  Zap,
-  Bot,
-} from "lucide-react";
+import { ReadmeDisplay } from "@/components/readme-display";
+import { MessageSquare, Database, Wrench, FileText, Zap } from "lucide-react";
 
 export default function HomePage() {
   const router = useRouter();
@@ -49,7 +43,7 @@ export default function HomePage() {
   return (
     <>
       <AppHeader />
-      <div className="flex-1 flex items-center justify-center bg-background">
+      <div className="flex-1 flex flex-col items-center justify-start bg-background p-6 space-y-8">
         <div className="text-center space-y-8">
           <h1 className="text-3xl font-bold text-foreground">
             Welcome to AINP
@@ -71,6 +65,10 @@ export default function HomePage() {
               );
             })}
           </div>
+        </div>
+
+        <div className="w-full max-w-4xl">
+          <ReadmeDisplay />
         </div>
       </div>
     </>

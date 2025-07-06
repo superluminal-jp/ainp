@@ -15,6 +15,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ReadmeDisplay } from "@/components/readme-display";
 
 import {
   Popover,
@@ -59,6 +60,7 @@ import {
   Zap,
   Mic,
   Code,
+  FileText,
 } from "lucide-react";
 import {
   Message,
@@ -146,6 +148,7 @@ export default function ChatPage() {
   const [messageMode, setMessageMode] = useState<"text" | "voice">("text");
   const [activeTab, setActiveTab] = useState<"chat" | "history">("chat");
   const [showConfiguration, setShowConfiguration] = useState(true);
+  const [showReadme, setShowReadme] = useState(false);
 
   useEffect(() => {
     // Load all data from Amplify
@@ -289,7 +292,9 @@ export default function ChatPage() {
 
         // Reset structured output when applying template
         setUseStructuredOutput(false);
-        console.log("🔧 [ChatPage] Structured output disabled for template application");
+        console.log(
+          "🔧 [ChatPage] Structured output disabled for template application"
+        );
 
         console.log(
           `✅ [ChatPage] Template applied successfully: ${template.name}`
@@ -408,7 +413,13 @@ export default function ChatPage() {
         </Popover>
       </div>
     ),
-    [selectedDatabases, selectedTools, customTools, clearChat, useStructuredOutput]
+    [
+      selectedDatabases,
+      selectedTools,
+      customTools,
+      clearChat,
+      useStructuredOutput,
+    ]
   );
 
   // Memoize description to prevent unnecessary re-renders
@@ -619,14 +630,19 @@ export default function ChatPage() {
         }),
       });
 
-            // Parse structured output schema if enabled
+      // Parse structured output schema if enabled
       let responseFormat = undefined;
       if (useStructuredOutput) {
         try {
           responseFormat = { json: JSON.parse(structuredOutputSchema) };
         } catch (error) {
-          console.error("❌ [ChatPage] Invalid JSON schema for structured output:", error);
-          toast.error("Invalid JSON schema for structured output. Please check the format.");
+          console.error(
+            "❌ [ChatPage] Invalid JSON schema for structured output:",
+            error
+          );
+          toast.error(
+            "Invalid JSON schema for structured output. Please check the format."
+          );
           setIsTyping(false);
           return;
         }
@@ -757,10 +773,10 @@ export default function ChatPage() {
         // Show success message with tool usage and structured output info
         const toolsUsedCount = responseData.toolsUsed || 0;
         const isStructuredOutput = responseData.structuredOutput || false;
-        
+
         let successMessage = "Response generated";
         const features = [];
-        
+
         if (toolsUsedCount > 0) {
           const toolNames = selectedTools
             .map((toolId) => {
@@ -768,17 +784,19 @@ export default function ChatPage() {
               return tool ? tool.name : toolId;
             })
             .join(", ");
-          features.push(`using ${toolsUsedCount} tool${toolsUsedCount > 1 ? "s" : ""}: ${toolNames}`);
+          features.push(
+            `using ${toolsUsedCount} tool${toolsUsedCount > 1 ? "s" : ""}: ${toolNames}`
+          );
         }
-        
+
         if (isStructuredOutput) {
           features.push("with structured output");
         }
-        
+
         if (features.length > 0) {
           successMessage += " " + features.join(" ");
         }
-        
+
         toast.success(successMessage + "!");
 
         console.log(
@@ -986,6 +1004,17 @@ export default function ChatPage() {
 
       {/* Main Layout Container */}
       <div className="flex flex-col h-[calc(100vh-5rem)]">
+        {/* README Display Section */}
+        {showReadme && (
+          <div className="border-b border-border p-4 bg-muted/30">
+            <ReadmeDisplay
+              path="/app/chat/README.md"
+              title="Chat Documentation"
+              className="max-w-4xl mx-auto"
+            />
+          </div>
+        )}
+
         {/* Main Content Area */}
         <div className="flex-1 min-h-0 overflow-y-auto">
           {activeTab === "chat" ? renderChatContent() : renderHistoryContent()}
@@ -994,25 +1023,36 @@ export default function ChatPage() {
         {/* Bottom Bar with Message Input */}
         <div className="border-t border-border bg-background p-4 flex-shrink-0">
           <div className="max-w-4xl mx-auto space-y-3">
-            {/* Configuration Toggle */}
+            {/* Configuration and README Toggles */}
             <div className="flex items-center justify-between">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  const newValue = !showConfiguration;
-                  console.log(
-                    `⚙️ [ChatPage] Configuration visibility changed: ${showConfiguration} -> ${newValue}`
-                  );
-                  setShowConfiguration(newValue);
-                }}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                <Settings className="h-3 w-3 mr-1" />
-                {showConfiguration
-                  ? "Hide Configuration"
-                  : "Show Configuration"}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    const newValue = !showConfiguration;
+                    console.log(
+                      `⚙️ [ChatPage] Configuration visibility changed: ${showConfiguration} -> ${newValue}`
+                    );
+                    setShowConfiguration(newValue);
+                  }}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <Settings className="h-3 w-3 mr-1" />
+                  {showConfiguration
+                    ? "Hide Configuration"
+                    : "Show Configuration"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowReadme(!showReadme)}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <FileText className="h-3 w-3 mr-1" />
+                  {showReadme ? "Hide Documentation" : "Show Documentation"}
+                </Button>
+              </div>
             </div>
 
             {/* Model Selection and Tools */}

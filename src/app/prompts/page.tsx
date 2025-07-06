@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { useState, useEffect, useRef } from "react";
 import { useSimpleHeader } from "@/components/use-page-header";
 import { AppHeader } from "@/components/app-header";
+import { ReadmeDisplay } from "@/components/readme-display";
 import {
   Edit,
   Trash2,
@@ -22,6 +23,7 @@ import {
   Bot,
   Send,
   User,
+  FileText,
 } from "lucide-react";
 
 import type { Schema } from "../../../amplify/data/resource";
@@ -61,6 +63,9 @@ export default function PromptsPage() {
   const [inputMessage, setInputMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // UI state
+  const [showReadme, setShowReadme] = useState(false);
 
   useEffect(() => {
     // Subscribe to real-time updates for all prompts
@@ -346,16 +351,39 @@ Make your suggestions actionable and immediately useful. Focus on best practices
   return (
     <>
       <AppHeader />
-      <div className="h-[calc(100vh-5rem)] bg-background text-foreground flex">
+      <div className="h-[calc(100vh-5rem)] bg-background text-foreground flex flex-col">
+        {/* README Display Section */}
+        {showReadme && (
+          <div className="border-b border-border p-4 bg-muted/30">
+            <ReadmeDisplay
+              path="/app/prompts/README.md"
+              title="Prompts Documentation"
+              className="max-w-6xl mx-auto"
+            />
+          </div>
+        )}
+
         <div className="flex-1 flex">
+          {/* Updated to flex-1 to take remaining space */}
           {/* Form Panel */}
           <div className="w-1/4 border-r border-border p-3">
             <Card className="h-full flex flex-col">
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4" />
-                  {isEditing ? "Edit Prompt" : "Create New Prompt"}
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4" />
+                    {isEditing ? "Edit Prompt" : "Create New Prompt"}
+                  </CardTitle>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowReadme(!showReadme)}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    <FileText className="h-3 w-3 mr-1" />
+                    {showReadme ? "Hide Docs" : "Show Docs"}
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="flex-1 flex flex-col space-y-3 overflow-y-auto">
                 <div className="space-y-1">

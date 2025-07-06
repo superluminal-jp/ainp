@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { useState, useEffect, useRef, useCallback } from "react";
 
 import { AppHeader } from "@/components/app-header";
+import { ReadmeDisplay } from "@/components/readme-display";
 import {
   ArrowLeft,
   Plus,
@@ -30,6 +31,7 @@ import {
   FolderOpen,
   ChevronRight,
   ChevronDown,
+  FileText,
 } from "lucide-react";
 
 import { uploadData, downloadData, remove, list } from "aws-amplify/storage";
@@ -141,6 +143,9 @@ export default function DatabasesPage() {
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
   const databaseFileInputRef = useRef<HTMLInputElement>(null);
+
+  // UI State - README toggle
+  const [showReadme, setShowReadme] = useState(false);
 
   /**
    * Add an error to the error state with automatic cleanup
@@ -1215,6 +1220,17 @@ export default function DatabasesPage() {
           </div>
         )}
 
+        {/* README Display Section */}
+        {showReadme && (
+          <div className="border-b border-border p-4 bg-muted/30">
+            <ReadmeDisplay
+              path="/app/databases/README.md"
+              title="Databases Documentation"
+              className="max-w-6xl mx-auto"
+            />
+          </div>
+        )}
+
         <div className="flex-1 flex">
           {/* Form Panel */}
           <div className="w-1/3 border-r border-border p-3">
@@ -1463,6 +1479,15 @@ export default function DatabasesPage() {
                   {databases.length} Databases
                 </Badge>
               </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowReadme(!showReadme)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                <FileText className="h-3 w-3 mr-1" />
+                {showReadme ? "Hide Documentation" : "Show Documentation"}
+              </Button>
             </div>
 
             <ScrollArea className="h-full">
