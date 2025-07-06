@@ -37,6 +37,7 @@ import {
   Database,
   MessageSquare,
   Eye,
+  Wrench,
 } from "lucide-react";
 
 import type { Schema } from "../../../amplify/data/resource";
@@ -50,11 +51,13 @@ interface TemplateData {
   description: string;
   systemPromptId: string;
   databaseIds: string[];
+  toolIds: string[];
   isActive: boolean;
   createdAt: Date;
   // Populated data for display
   systemPrompt?: Schema["systemPrompts"]["type"];
   databases?: Schema["databases"]["type"][];
+  tools?: Schema["toolSpecs"]["type"][];
 }
 
 export default function TemplatesPage() {
@@ -68,6 +71,7 @@ export default function TemplatesPage() {
     Schema["systemPrompts"]["type"][]
   >([]);
   const [databases, setDatabases] = useState<Schema["databases"]["type"][]>([]);
+  const [tools, setTools] = useState<Schema["toolSpecs"]["type"][]>([]);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<TemplateData | null>(
@@ -82,6 +86,7 @@ export default function TemplatesPage() {
     description: "",
     systemPromptId: "",
     databaseIds: [] as string[],
+    toolIds: [] as string[],
   });
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -95,14 +100,17 @@ export default function TemplatesPage() {
     setLoading(true);
     try {
       // Fetch all required data
-      const [templatesRes, promptsRes, databasesRes] = await Promise.all([
-        client.models.templates.list(),
-        client.models.systemPrompts.list(),
-        client.models.databases.list(),
-      ]);
+      const [templatesRes, promptsRes, databasesRes, toolsRes] =
+        await Promise.all([
+          client.models.templates.list(),
+          client.models.systemPrompts.list(),
+          client.models.databases.list(),
+          client.models.toolSpecs.list(),
+        ]);
 
       setSystemPrompts(promptsRes.data || []);
       setDatabases(databasesRes.data || []);
+      setTools(toolsRes.data || []);
 
       // Process templates and populate related data
       const processedTemplates = await Promise.all(
@@ -111,12 +119,19 @@ export default function TemplatesPage() {
             ? template.databaseIds
             : JSON.parse((template.databaseIds as string) || "[]");
 
+          const toolIds = Array.isArray(template.toolIds)
+            ? template.toolIds
+            : JSON.parse((template.toolIds as string) || "[]");
+
           // Find related data
           const systemPrompt = promptsRes.data?.find(
             (p) => p.id === template.systemPromptId
           );
           const relatedDatabases = databasesRes.data?.filter((d) =>
             databaseIds.includes(d.id)
+          );
+          const relatedTools = toolsRes.data?.filter((t) =>
+            toolIds.includes(t.id)
           );
 
           return {
@@ -125,10 +140,12 @@ export default function TemplatesPage() {
             description: template.description,
             systemPromptId: template.systemPromptId,
             databaseIds,
+            toolIds,
             isActive: template.isActive ?? true,
             createdAt: new Date(template.createdAt || Date.now()),
             systemPrompt,
             databases: relatedDatabases,
+            tools: relatedTools,
           } as TemplateData;
         })
       );
@@ -156,6 +173,7 @@ export default function TemplatesPage() {
         description: formData.description.trim(),
         systemPromptId: formData.systemPromptId,
         databaseIds: JSON.stringify(formData.databaseIds),
+        toolIds: JSON.stringify(formData.toolIds),
         isActive: true,
         createdAt: new Date().toISOString(),
       });
@@ -176,6 +194,7 @@ export default function TemplatesPage() {
       description: template.description,
       systemPromptId: template.systemPromptId,
       databaseIds: template.databaseIds,
+      toolIds: template.toolIds,
     });
     setIsEditing(true);
   };
@@ -197,6 +216,7 @@ export default function TemplatesPage() {
         description: formData.description.trim(),
         systemPromptId: formData.systemPromptId,
         databaseIds: JSON.stringify(formData.databaseIds),
+        toolIds: JSON.stringify(formData.toolIds),
       });
 
       resetForm();
@@ -246,6 +266,7 @@ export default function TemplatesPage() {
       description: "",
       systemPromptId: "",
       databaseIds: [],
+      toolIds: [],
     });
     setEditingTemplate(null);
     setIsEditing(false);
@@ -263,6 +284,15 @@ export default function TemplatesPage() {
       databaseIds: prev.databaseIds.includes(databaseId)
         ? prev.databaseIds.filter((id) => id !== databaseId)
         : [...prev.databaseIds, databaseId],
+    }));
+  };
+
+  const handleToolToggle = (toolId: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      toolIds: prev.toolIds.includes(toolId)
+        ? prev.toolIds.filter((id) => id !== toolId)
+        : [...prev.toolIds, toolId],
     }));
   };
 
@@ -376,6 +406,46 @@ export default function TemplatesPage() {
                               </label>
                             </div>
                           ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Tools Selection */}
+                  <div className="space-y-3">
+                    <Label className="flex items-center gap-2">
+                      <Wrench className="h-4 w-4" />
+                      Tools
+                    </Label>
+                    <div className="border rounded-lg p-3 max-h-40 overflow-y-auto">
+                      {tools.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          No tools available
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {tools
+                            .filter((tool) => tool.isActive)
+                            .map((tool) => (
+                              <div
+                                key={tool.id}
+                                className="flex items-center space-x-2"
+                              >
+                                <input
+                                  type="checkbox"
+                                  id={`tool-${tool.id}`}
+                                  checked={formData.toolIds.includes(tool.id)}
+                                  onChange={() => handleToolToggle(tool.id)}
+                                  className="h-4 w-4"
+                                />
+                                <label
+                                  htmlFor={`tool-${tool.id}`}
+                                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                >
+                                  {tool.name}
+                                </label>
+                              </div>
+                            ))}
                         </div>
                       )}
                     </div>
@@ -519,6 +589,30 @@ export default function TemplatesPage() {
                                 )}
                               </div>
                             </div>
+
+                            <div>
+                              <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                                <Wrench className="h-3 w-3" />
+                                Tools ({template.tools?.length || 0})
+                              </Label>
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {template.tools?.length === 0 ? (
+                                  <span className="text-xs text-muted-foreground">
+                                    None
+                                  </span>
+                                ) : (
+                                  template.tools?.map((tool) => (
+                                    <Badge
+                                      key={tool.id}
+                                      variant="secondary"
+                                      className="text-xs"
+                                    >
+                                      {tool.name}
+                                    </Badge>
+                                  ))
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -595,6 +689,29 @@ export default function TemplatesPage() {
                           <h5 className="font-medium text-sm">{db.name}</h5>
                           <p className="text-xs text-muted-foreground">
                             {db.description}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium flex items-center gap-2">
+                    <Wrench className="h-4 w-4" />
+                    Tools ({viewingTemplate.tools?.length || 0})
+                  </Label>
+                  <div className="mt-2 space-y-2">
+                    {viewingTemplate.tools?.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No tools selected
+                      </p>
+                    ) : (
+                      viewingTemplate.tools?.map((tool) => (
+                        <div key={tool.id} className="p-2 border rounded">
+                          <h5 className="font-medium text-sm">{tool.name}</h5>
+                          <p className="text-xs text-muted-foreground">
+                            {tool.description}
                           </p>
                         </div>
                       ))
