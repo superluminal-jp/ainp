@@ -88,26 +88,26 @@ export function ReadmeDisplay({
       </CardHeader>
       <CardContent>
         <ScrollArea className="h-96 w-full">
-          <div className="prose prose-sm max-w-none dark:prose-invert">
+          <div className="prose prose-sm max-w-none dark:prose-invert break-words">
             <ReactMarkdown
               components={{
                 h1: ({ children }) => (
-                  <h1 className="text-2xl font-bold mb-4 text-foreground">
+                  <h1 className="text-2xl font-bold mb-4 text-foreground break-words">
                     {children}
                   </h1>
                 ),
                 h2: ({ children }) => (
-                  <h2 className="text-xl font-semibold mb-3 text-foreground">
+                  <h2 className="text-xl font-semibold mb-3 text-foreground break-words">
                     {children}
                   </h2>
                 ),
                 h3: ({ children }) => (
-                  <h3 className="text-lg font-medium mb-2 text-foreground">
+                  <h3 className="text-lg font-medium mb-2 text-foreground break-words">
                     {children}
                   </h3>
                 ),
                 p: ({ children }) => (
-                  <p className="mb-3 text-foreground leading-relaxed">
+                  <p className="mb-3 text-foreground leading-relaxed break-words whitespace-pre-wrap">
                     {children}
                   </p>
                 ),
@@ -122,20 +122,22 @@ export function ReadmeDisplay({
                   </ol>
                 ),
                 li: ({ children }) => (
-                  <li className="mb-1 text-foreground">{children}</li>
+                  <li className="mb-1 text-foreground break-words">
+                    {children}
+                  </li>
                 ),
                 code: ({ children }) => (
-                  <code className="bg-muted px-1 py-0.5 rounded text-sm font-mono text-foreground">
+                  <code className="bg-muted px-1 py-0.5 rounded text-sm font-mono text-foreground break-all">
                     {children}
                   </code>
                 ),
                 pre: ({ children }) => (
-                  <pre className="bg-muted p-4 rounded-md overflow-x-auto mb-4">
+                  <pre className="bg-muted p-4 rounded-md overflow-x-auto mb-4 whitespace-pre-wrap break-words">
                     {children}
                   </pre>
                 ),
                 blockquote: ({ children }) => (
-                  <blockquote className="border-l-4 border-primary pl-4 italic text-muted-foreground mb-4">
+                  <blockquote className="border-l-4 border-primary pl-4 italic text-muted-foreground mb-4 break-words">
                     {children}
                   </blockquote>
                 ),
