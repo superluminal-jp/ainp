@@ -8,4 +8,4 @@ RUN pip install -r requirements.txt
 COPY index.py ${LAMBDA_TASK_ROOT}
 
 # Set the CMD to your handler
-CMD ["index.handler"] 
+CMD [ "index.handler" ] 

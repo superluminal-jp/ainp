@@ -1,9 +1,8 @@
-import { execSync } from "node:child_process";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineFunction } from "@aws-amplify/backend";
-import { DockerImage, Duration } from "aws-cdk-lib";
-import { Code, Function, Runtime, LayerVersion } from "aws-cdk-lib/aws-lambda";
+import { Duration } from "aws-cdk-lib";
+import { Code, Function, Runtime } from "aws-cdk-lib/aws-lambda";
 import { PolicyStatement, Effect } from "aws-cdk-lib/aws-iam";
 
 const functionDir = path.dirname(fileURLToPath(import.meta.url));
@@ -11,16 +10,14 @@ const functionDir = path.dirname(fileURLToPath(import.meta.url));
 export const embedFilesFunction = defineFunction(
   (scope) => {
     const fn = new Function(scope, "embed-files", {
-      code: Code.fromDockerBuild(functionDir, {
-        file: "Dockerfile",
-      }),
-      runtime: Runtime.FROM_IMAGE,
       handler: "index.handler",
+      runtime: Runtime.PYTHON_3_12,
       timeout: Duration.minutes(5),
       memorySize: 1024,
       environment: {
         FAISS_INDEX_PREFIX: "faiss-indexes",
       },
+      code: Code.fromDockerBuild(functionDir),
     });
 
     // Add IAM permissions for Bedrock
