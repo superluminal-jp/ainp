@@ -17,7 +17,7 @@ const backend = defineBackend({
   // embedFilesFunction,
   chatBedrockToolsFunction,
 });
-
+ 
 // Grant the embed-files function access to the storage bucket
 // backend.storage.resources.bucket.grantReadWrite(
 //   backend.embedFilesFunction.resources.lambda
