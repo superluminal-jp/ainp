@@ -1,9 +1,9 @@
-# boto3
-# numpy
-faiss-cpu
-# requests
+boto3
+numpy
+faiss-cpu>=1.9.0
+requests
 # pandas
-# numpy
+# numpy  # already included above
 # beautifulsoup4
 # python-dateutil
 # pytz
