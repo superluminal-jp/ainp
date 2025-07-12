@@ -1,14 +1,15 @@
 # Prompts Page Component
 
-A sophisticated system prompt management interface built with Next.js and AWS Amplify, featuring AI-powered prompt assistance, real-time collaboration, and comprehensive prompt engineering tools.
+A sophisticated system prompt management interface built with Next.js and AWS Amplify, featuring AI-powered prompt assistance, real-time collaboration, and comprehensive prompt engineering tools with a three-panel layout design.
 
 ## Overview
 
 The Prompts Page (`/prompts`) is the central hub for managing system prompts in the application, providing users with:
 
 - **System Prompt Management**: Create, edit, and delete custom system prompts
-- **AI-Powered Assistant**: Built-in AI helper for prompt creation and optimization
-- **Real-time Synchronization**: Live updates across all connected sessions
+- **AI-Powered Assistant**: Built-in AI helper for prompt creation and optimization with structured output
+- **Real-time Synchronization**: Live updates across all connected sessions via AWS Amplify subscriptions
+- **Three-Panel Layout**: Form, AI assistant, and prompts list in dedicated panels
 - **Prompt Engineering Tools**: Best practices and optimization suggestions
 - **Template Library**: Pre-built prompts for common use cases
 - **Integration Ready**: Seamless integration with chat and other components
@@ -19,36 +20,36 @@ The Prompts Page (`/prompts`) is the central hub for managing system prompts in 
 
 ### 📝 System Prompt Management
 
-- **Create Prompts**: Add new system prompts with descriptive names
-- **Edit Prompts**: Modify existing prompt content and metadata
-- **Delete Prompts**: Remove prompts with confirmation dialogs
-- **Toggle Status**: Enable/disable prompts for use in chat sessions
-- **Copy Content**: One-click copying of prompt content to clipboard
-- **Real-time Updates**: Live synchronization across browser sessions
+- **Create Prompts**: Add new system prompts with descriptive names and content
+- **Edit Prompts**: Modify existing prompt content and metadata with dedicated edit mode
+- **Delete Prompts**: Remove prompts with one-click deletion
+- **Toggle Status**: Enable/disable prompts for use in chat sessions with visual switches
+- **Copy Content**: One-click copying of prompt content to clipboard with visual feedback
+- **Real-time Updates**: Live synchronization across browser sessions via AWS Amplify subscriptions
 
 ### 🤖 AI-Powered Prompt Assistant
 
-- **Intelligent Suggestions**: AI-generated prompt names and content
+- **Intelligent Suggestions**: AI-generated prompt names and content using structured output
 - **Optimization Advice**: Recommendations for improving existing prompts
-- **Best Practices**: Guidance on prompt engineering techniques
+- **Best Practices**: Guidance on prompt engineering techniques and methodologies
 - **Auto-Application**: Automatic application of AI suggestions to forms
 - **Structured Responses**: JSON-formatted AI responses with actionable suggestions
-- **Interactive Chat**: Conversational interface for prompt development
+- **Interactive Chat**: Conversational interface for prompt development with specialized system prompt
 
 ### 🎛️ User Interface
 
-- **Three-Panel Layout**: Form, assistant, and prompt list panels
-- **Responsive Design**: Optimized for various screen sizes
-- **Real-time Feedback**: Visual indicators for all operations
-- **Keyboard Shortcuts**: Efficient navigation and input handling
+- **Three-Panel Layout**: Form (1/4), AI assistant (1/3), and prompt list (remaining) panels
+- **Responsive Design**: Optimized layout with proper spacing and scrolling
+- **Real-time Feedback**: Visual indicators for all operations with toast notifications
+- **Documentation Toggle**: Built-in README display for contextual help
+- **Loading States**: Visual feedback during operations with disabled controls
 - **Error Handling**: Comprehensive error management with user feedback
-- **Loading States**: Visual feedback during operations
 
 ### 🔧 Advanced Features
 
-- **Prompt Templates**: Pre-built prompts for common scenarios
+- **Prompt Engineering Assistant**: Specialized AI assistant for prompt creation and optimization
 - **Version Control**: Track changes and maintain prompt history
-- **Collaboration**: Multi-user prompt editing and sharing
+- **Collaboration**: Multi-user prompt editing and sharing capabilities
 - **Integration Points**: Connect with chat, databases, and tools
 - **Export/Import**: Backup and share prompt collections
 - **Analytics**: Usage tracking and optimization metrics
@@ -76,11 +77,7 @@ const [formData, setFormData] = useState({
 // UI state
 const [copiedId, setCopiedId] = useState<string | null>(null);
 const [loading, setLoading] = useState(false);
-
-// Chat assistant state
-const [messages, setMessages] = useState<ChatMessage[]>([]);
-const [inputMessage, setInputMessage] = useState("");
-const [isLoading, setIsLoading] = useState(false);
+const [showReadme, setShowReadme] = useState(false);
 ```
 
 ### Data Flow
@@ -96,22 +93,23 @@ const [isLoading, setIsLoading] = useState(false);
 ```
 PromptsPage
 ├── AppHeader (Global navigation)
-├── Main Layout (Three-panel design)
-│   ├── Form Panel (Left 1/4)
-│   │   ├── Prompt Form
-│   │   ├── Name Input
-│   │   ├── Content Textarea
-│   │   └── Action Buttons
-│   ├── Assistant Panel (Center 1/3)
-│   │   ├── Chat Interface
-│   │   ├── Message History
-│   │   ├── AI Responses
-│   │   └── Input Controls
-│   └── Prompts List (Right)
-│       ├── Prompt Cards
-│       ├── Status Toggles
-│       ├── Action Buttons
-│       └── Copy Functions
+├── README Display (Collapsible documentation)
+└── Three-Panel Layout
+    ├── Form Panel (Left 1/4)
+    │   ├── Create/Edit Form
+    │   ├── Name Input
+    │   ├── Content Textarea
+    │   └── Action Buttons
+    ├── AI Assistant Panel (Center 1/3)
+    │   ├── ChatAssistant Component
+    │   ├── Specialized System Prompt
+    │   ├── Structured Output Handling
+    │   └── Suggestion Application
+    └── Prompts List (Right Panel)
+        ├── Prompt Cards
+        ├── Status Toggles
+        ├── Action Buttons
+        └── Copy Functions
 ```
 
 ## Usage
@@ -126,217 +124,268 @@ PromptsPage
 
 ### Using the AI Assistant
 
-1. Type your request in the assistant chat panel
+1. Type your request in the AI assistant panel
 2. Ask for help with prompt creation, optimization, or best practices
-3. Review AI suggestions in the response
-4. Suggestions are automatically applied to the form
+3. Review AI suggestions in the structured response
+4. Suggestions are automatically applied to the form fields
 5. Modify as needed and save the prompt
 
 ### Managing Existing Prompts
 
-1. View all prompts in the right panel
-2. Toggle active/inactive status with the switch
-3. Click edit button to modify prompt content
-4. Use copy button to copy prompt content
-5. Delete prompts with the trash button (confirmation required)
+1. View all prompts in the right panel with scroll area
+2. Toggle active/inactive status with the switch control
+3. Click edit button to modify prompt content (enters edit mode)
+4. Use copy button to copy prompt content (shows check icon temporarily)
+5. Delete prompts with the trash button (immediate deletion)
 
 ### Example Prompt Creation Workflow
 
 ```typescript
-// AI Assistant interaction
+// AI Assistant interaction with structured output
 const userQuery = "Create a prompt for a coding assistant that helps with Python";
 
-// AI Response (structured)
+// AI Response (structured JSON)
 {
-  "message": "I'll help you create a Python coding assistant prompt...",
-  "suggestions": {
-    "name": "Python Coding Assistant",
-    "content": "You are an expert Python developer assistant. Help users with:\n- Writing clean, efficient Python code\n- Debugging and troubleshooting\n- Best practices and conventions\n- Library recommendations..."
-  },
-  "tips": [
-    "Be specific about the programming domains",
-    "Include error handling guidelines",
-    "Mention code review practices"
-  ]
+  "name": "Python Coding Assistant",
+  "content": "You are an expert Python developer assistant. Your role is to:\n\n**Primary Functions:**\n- Help users write clean, efficient Python code\n- Debug and troubleshoot Python applications\n- Provide best practices and conventions\n- Suggest library recommendations\n\n**Guidelines:**\n- Use clear, practical examples\n- Explain complex concepts step by step\n- Focus on readability and maintainability\n- Include error handling when appropriate\n\n**Response Format:**\n- Provide working code examples\n- Explain the reasoning behind solutions\n- Offer alternatives when relevant\n- Include comments for clarity"
 }
 ```
 
 ## API Integration
-
-### Prompt Operations
-
-```typescript
-// Create System Prompt
-const createPrompt = async () => {
-  await client.models.systemPrompts.create({
-    name: formData.name.trim(),
-    content: formData.content.trim(),
-    isActive: true,
-  });
-};
-
-// Update System Prompt
-const updatePrompt = async () => {
-  await client.models.systemPrompts.update({
-    id: editingPrompt.id,
-    name: formData.name.trim(),
-    content: formData.content.trim(),
-    isActive: true,
-  });
-};
-
-// Delete System Prompt
-const deletePrompt = async (id: string) => {
-  await client.models.systemPrompts.delete({ id });
-};
-
-// Toggle Active Status
-const toggleActive = async (id: string) => {
-  await client.models.systemPrompts.update({
-    id,
-    isActive: !prompt.isActive,
-  });
-};
-```
 
 ### Real-time Subscriptions
 
 ```typescript
 // Subscribe to prompt updates
 useEffect(() => {
-  const subscription = client.models.systemPrompts.observeQuery().subscribe({
+  const sub = client.models.systemPrompts.observeQuery().subscribe({
     next: ({ items }) => {
       setSystemPrompts([...items]);
     },
     error: (error) => {
-      console.error("Subscription error:", error);
+      console.error("Error in real-time subscription:", error);
     },
   });
 
-  return () => subscription.unsubscribe();
+  return () => sub.unsubscribe();
 }, []);
+```
+
+### Prompt Operations
+
+```typescript
+// Create System Prompt
+const handleAddPrompt = async () => {
+  if (!formData.name.trim() || !formData.content.trim()) return;
+
+  setLoading(true);
+  try {
+    await client.models.systemPrompts.create({
+      name: formData.name.trim(),
+      content: formData.content.trim(),
+      isActive: true,
+    });
+
+    setFormData({ name: "", content: "" });
+    setIsEditing(false);
+  } catch (error) {
+    console.error("Error creating prompt:", error);
+  } finally {
+    setLoading(false);
+  }
+};
+
+// Update System Prompt
+const handleUpdatePrompt = async () => {
+  if (!editingPrompt || !formData.name.trim() || !formData.content.trim())
+    return;
+
+  setLoading(true);
+  try {
+    await client.models.systemPrompts.update({
+      id: editingPrompt.id,
+      name: formData.name.trim(),
+      content: formData.content.trim(),
+      isActive: true,
+    });
+
+    setFormData({ name: "", content: "" });
+    setEditingPrompt(null);
+    setIsEditing(false);
+  } catch (error) {
+    console.error("Error updating prompt:", error);
+  } finally {
+    setLoading(false);
+  }
+};
+
+// Delete System Prompt
+const handleDeletePrompt = async (id: string) => {
+  setLoading(true);
+  try {
+    await client.models.systemPrompts.delete({ id });
+  } catch (error) {
+    console.error("Error deleting prompt:", error);
+  } finally {
+    setLoading(false);
+  }
+};
+
+// Toggle Active Status
+const togglePromptActive = async (id: string) => {
+  const prompt = systemPrompts.find((p) => p.id === id);
+  if (!prompt) return;
+
+  setLoading(true);
+  try {
+    await client.models.systemPrompts.update({
+      id,
+      isActive: !prompt.isActive,
+    });
+  } catch (error) {
+    console.error("Error updating prompt:", error);
+  } finally {
+    setLoading(false);
+  }
+};
 ```
 
 ### AI Assistant Integration
 
 ```typescript
-// AI-powered prompt assistance
-const getPromptHelp = async (userMessage: string) => {
-  const response = await client.queries.chatWithBedrockTools({
-    messages: conversationHistory,
-    systemPrompt: promptEngineeringSystemPrompt,
-    modelId: "apac.anthropic.claude-sonnet-4-20250514-v1:0",
-    responseFormat: {
-      json: {
-        type: "object",
-        properties: {
-          message: { type: "string" },
-          suggestions: {
-            type: "object",
-            properties: {
-              name: { type: "string" },
-              content: { type: "string" },
-            },
-          },
-          tips: {
-            type: "array",
-            items: { type: "string" },
-          },
-        },
-      },
-    },
-  });
-};
-```
-
-## Prompt Engineering Best Practices
-
-### Effective Prompt Structure
-
-```typescript
-// Well-structured system prompt example
-const examplePrompt = {
-  name: "Technical Documentation Assistant",
-  content: `You are a technical documentation specialist. Your role is to:
+// AI-powered prompt assistance with structured output
+const PROMPTS_ASSISTANT_PROMPT = `You are an expert AI assistant specialized in helping users create effective system prompts. Your role is to:
 
 **Primary Functions:**
-- Create clear, comprehensive technical documentation
-- Explain complex concepts in accessible language
-- Structure information logically and coherently
-
-**Guidelines:**
-- Use active voice and concise sentences
-- Include practical examples and code snippets
-- Organize content with proper headings and sections
-- Ensure accuracy and up-to-date information
+- Generate comprehensive system prompts for various AI assistant roles
+- Optimize existing prompts for clarity and effectiveness
+- Provide best practices for prompt engineering
+- Help users understand prompt structure and components
+- Suggest improvements for prompt performance
 
 **Response Format:**
-- Start with a brief overview
-- Provide detailed explanations with examples
-- End with actionable next steps or resources
+You will use structured output to return a JSON object with the prompt specification. The response will be automatically formatted as JSON with the following fields:
 
-**Constraints:**
-- Keep explanations focused and relevant
-- Avoid unnecessary jargon or overly complex language
-- Maintain consistency in style and tone throughout`,
+- **name**: Prompt name (string)
+- **content**: Complete system prompt content (string)
+
+**Prompt Engineering Guidelines:**
+- Create clear, specific instructions for AI behavior
+- Include role definition, task description, and output format
+- Use structured format with headers and bullet points
+- Provide examples and context when helpful
+- Consider constraints and ethical guidelines
+
+**Best Practices:**
+- Start with role definition (e.g., "You are a...")
+- Include specific instructions and guidelines
+- Define expected output format and style
+- Add constraints and limitations
+- Use clear, concise language
+- Structure content with proper formatting`;
+
+// Handle AI suggestions
+const handleSuggestionReceived = (suggestions: any) => {
+  console.log("🔍 AI suggestions received:", suggestions);
+
+  // Apply suggestions to form data
+  setFormData((prev) => {
+    const updated = { ...prev };
+
+    if (suggestions.name) {
+      updated.name = suggestions.name;
+    }
+
+    if (suggestions.content) {
+      updated.content = suggestions.content;
+    }
+
+    return updated;
+  });
+
+  // Show success message
+  const appliedFields = [];
+  if (suggestions.name) appliedFields.push("name");
+  if (suggestions.content) appliedFields.push("content");
+
+  if (appliedFields.length > 0) {
+    toast.success(`Applied AI suggestions to: ${appliedFields.join(", ")}`);
+  }
 };
 ```
 
-### Prompt Categories
+## User Interface Features
 
-1. **Role-Based Prompts**: Define specific AI personas (e.g., teacher, analyst, developer)
-2. **Task-Specific Prompts**: Focus on particular functions (e.g., writing, coding, research)
-3. **Domain Expert Prompts**: Specialized knowledge areas (e.g., medical, legal, technical)
-4. **Interaction Style Prompts**: Define communication preferences (e.g., formal, casual, educational)
+### Form Panel
 
-### Optimization Techniques
+- **Name Input**: Descriptive prompt identification with placeholder text
+- **Content Textarea**: Full prompt content with auto-resize functionality
+- **Action Buttons**: Create/Update/Cancel/Clear with loading states
+- **Edit Mode**: Dedicated edit mode with different button states
+- **Validation**: Real-time form validation and error display
 
-- **Clarity**: Use clear, unambiguous instructions
-- **Specificity**: Define exact requirements and constraints
-- **Examples**: Include sample inputs and outputs
-- **Context**: Provide relevant background information
-- **Formatting**: Structure prompts with headers and bullet points
-- **Testing**: Validate prompts with various inputs
+### AI Assistant Panel
+
+- **ChatAssistant Component**: Specialized chat interface for prompt assistance
+- **Contextual Placeholder**: Helpful placeholder text for user guidance
+- **Structured Output**: JSON-formatted responses with auto-application
+- **Suggestion Application**: Automatic form population from AI suggestions
+- **Toast Notifications**: Success feedback when suggestions are applied
+
+### Prompts List
+
+- **Card Layout**: Visual prompt organization with proper spacing
+- **Status Indicators**: Active/inactive visual switches with labels
+- **Quick Actions**: Copy, edit, delete functionality with icon buttons
+- **Copy Feedback**: Temporary check icon when content is copied
+- **Scroll Area**: Proper scrolling for large prompt lists
+- **Empty State**: Helpful message when no prompts exist
+
+### Copy Functionality
+
+```typescript
+// Copy prompt content with visual feedback
+const copyPromptContent = async (content: string, id: string) => {
+  await navigator.clipboard.writeText(content);
+  setCopiedId(id);
+  setTimeout(() => setCopiedId(null), 2000);
+};
+```
 
 ## AI Assistant Capabilities
 
 ### Prompt Generation
 
-- **Name Suggestions**: Creative, descriptive names based on prompt purpose
-- **Content Creation**: Complete prompt content with best practices
-- **Structure Optimization**: Proper formatting and organization
-- **Tone Adjustment**: Modify prompts for different interaction styles
+- **Template Selection**: Choose appropriate prompt templates for different use cases
+- **Role Definition**: Generate clear role definitions for AI assistants
+- **Instruction Formatting**: Structure prompts with proper headers and bullet points
+- **Response Formatting**: Define expected output formats and styles
+- **Documentation**: Add proper explanations and examples
+- **Best Practices**: Follow prompt engineering conventions
 
-### Prompt Improvement
+### Structured Output Format
 
-- **Clarity Enhancement**: Make instructions more precise
-- **Completeness Check**: Identify missing elements
-- **Consistency Review**: Ensure coherent style throughout
-- **Performance Optimization**: Improve AI response quality
+```typescript
+// AI Assistant Response Structure
+interface PromptSuggestion {
+  name: string;        // Suggested prompt name
+  content: string;     // Complete prompt content
+}
 
-### Best Practice Guidance
-
-- **Prompt Engineering Tips**: Industry-standard techniques
-- **Common Pitfalls**: Avoid typical mistakes
-- **Testing Strategies**: Validate prompt effectiveness
-- **Performance Metrics**: Measure prompt success
-
-### Structured Response Format
-
-```json
+// Example structured response
 {
-  "message": "Detailed explanation and guidance",
-  "suggestions": {
-    "name": "Suggested prompt name",
-    "content": "Complete prompt content with best practices"
-  },
-  "tips": [
-    "Practical tip for prompt engineering",
-    "Best practice recommendation",
-    "Optimization technique"
-  ]
+  "name": "Technical Documentation Assistant",
+  "content": "You are a technical documentation specialist. Your role is to:\n\n**Primary Functions:**\n- Create clear, comprehensive technical documentation\n- Explain complex concepts in accessible language\n- Structure information logically and coherently\n\n**Guidelines:**\n- Use active voice and concise sentences\n- Include practical examples and code snippets\n- Organize content with proper headings and sections\n- Ensure accuracy and up-to-date information\n\n**Response Format:**\n- Start with a brief overview\n- Provide detailed explanations with examples\n- End with actionable next steps or resources"
 }
 ```
+
+### Optimization Advice
+
+- **Clarity Enhancement**: Make instructions more precise and actionable
+- **Completeness Check**: Identify missing elements in prompts
+- **Consistency Review**: Ensure coherent style throughout prompts
+- **Performance Optimization**: Improve AI response quality and relevance
+- **Structure Improvement**: Better organization and formatting
 
 ## Integration Points
 
@@ -363,138 +412,99 @@ const chatConfiguration = {
 
 ### Database Integration
 
-- **Prompt Storage**: Secure storage in AWS Amplify
+- **Prompt Storage**: Secure storage in AWS Amplify with real-time sync
 - **Version History**: Track prompt changes over time
 - **Usage Analytics**: Monitor prompt performance and usage
 - **Backup & Recovery**: Automatic prompt backup and restoration
-
-## User Interface Features
-
-### Form Panel
-
-- **Name Input**: Descriptive prompt identification
-- **Content Textarea**: Full prompt content with syntax highlighting
-- **Auto-resize**: Dynamic textarea sizing based on content
-- **Character Count**: Monitor prompt length for optimization
-- **Validation**: Real-time form validation and error display
-
-### Assistant Panel
-
-- **Chat Interface**: Conversational AI assistance
-- **Message History**: Persistent conversation tracking
-- **Auto-scroll**: Automatic scrolling to latest messages
-- **Typing Indicators**: Visual feedback during AI processing
-- **Response Formatting**: Proper display of structured responses
-
-### Prompts List
-
-- **Card Layout**: Visual prompt organization
-- **Status Indicators**: Active/inactive visual cues
-- **Quick Actions**: Copy, edit, delete functionality
-- **Search & Filter**: Find specific prompts quickly
-- **Sorting Options**: Organize by name, date, or usage
-
-### Keyboard Shortcuts
-
-- **Enter**: Send message in assistant chat
-- **Shift+Enter**: New line in textarea
-- **Ctrl/Cmd+S**: Save current prompt
-- **Escape**: Cancel editing mode
-- **Ctrl/Cmd+C**: Copy selected prompt content
 
 ## Performance Optimization
 
 ### Efficient State Management
 
-- **Memoization**: Prevent unnecessary re-renders
-- **Lazy Loading**: Load prompts on demand
-- **Debounced Updates**: Reduce API calls during typing
-- **Optimistic Updates**: Immediate UI feedback
+- **Memoization**: Prevent unnecessary re-renders with proper state management
+- **Real-time Updates**: Efficient AWS Amplify subscriptions
+- **Optimistic Updates**: Immediate UI feedback for user actions
+- **Loading States**: Proper loading indicators during operations
 
 ### Memory Management
 
-- **Cleanup**: Automatic cleanup of subscriptions and timeouts
-- **Garbage Collection**: Efficient memory usage patterns
-- **State Minimization**: Store only necessary data in state
+- **Subscription Cleanup**: Proper cleanup of AWS Amplify subscriptions
+- **Timeout Management**: Automatic cleanup of temporary UI states
+- **State Minimization**: Store only necessary data in component state
 - **Component Optimization**: Efficient component lifecycle management
-
-### Network Optimization
-
-- **Batched Operations**: Group related API calls
-- **Caching**: Cache frequently accessed prompts
-- **Compression**: Optimize data transfer
-- **Error Recovery**: Graceful handling of network issues
-
-## Security Features
-
-### Input Validation
-
-- **Sanitization**: Clean user input before storage
-- **Length Limits**: Enforce reasonable prompt sizes
-- **Content Filtering**: Prevent malicious content injection
-- **XSS Prevention**: Protect against cross-site scripting
-
-### Access Control
-
-- **User Authentication**: Secure prompt access
-- **Permission Management**: Control prompt modification rights
-- **Audit Logging**: Track all prompt operations
-- **Data Encryption**: Secure storage and transmission
 
 ## Error Handling
 
 ### Common Error Scenarios
 
 ```typescript
-// Network errors
-const handleNetworkError = (error: Error) => {
-  console.error("Network error:", error);
-  // Show user-friendly error message
-  // Attempt retry with exponential backoff
+// Form validation
+const validateForm = () => {
+  if (!formData.name.trim()) {
+    toast.error("Prompt name is required");
+    return false;
+  }
+
+  if (!formData.content.trim()) {
+    toast.error("Prompt content is required");
+    return false;
+  }
+
+  return true;
 };
 
-// Validation errors
-const handleValidationError = (field: string, message: string) => {
-  // Highlight problematic field
-  // Display specific error message
-  // Prevent form submission
-};
-
-// AI processing errors
-const handleAIError = (error: Error) => {
-  // Fallback to basic functionality
-  // Log error for debugging
-  // Notify user of degraded service
+// API error handling
+const handleApiError = (error: Error, operation: string) => {
+  console.error(`Error ${operation}:`, error);
+  toast.error(`Failed to ${operation}. Please try again.`);
 };
 ```
 
 ### Error Recovery
 
-- **Automatic Retry**: Retry failed operations with backoff
+- **Automatic Retry**: Retry failed operations with exponential backoff
 - **Graceful Degradation**: Maintain core functionality during errors
 - **User Notification**: Clear error messages with suggested actions
 - **Debug Information**: Detailed logging for troubleshooting
 
 ## Testing
 
-### Unit Tests
+### Component Testing
 
 ```typescript
 describe("PromptsPage", () => {
   test("should create new prompt", async () => {
-    // Test prompt creation functionality
-  });
+    render(<PromptsPage />);
 
-  test("should edit existing prompt", async () => {
-    // Test prompt editing workflow
+    // Fill form
+    fireEvent.change(screen.getByPlaceholderText(/e.g., Research Assistant/), {
+      target: { value: "Test Prompt" }
+    });
+
+    fireEvent.change(screen.getByPlaceholderText(/Enter the system prompt content/), {
+      target: { value: "Test content" }
+    });
+
+    // Submit form
+    fireEvent.click(screen.getByText("Create"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Test Prompt")).toBeInTheDocument();
+    });
   });
 
   test("should handle AI assistant responses", async () => {
-    // Test AI integration and response handling
+    render(<PromptsPage />);
+
+    // Test AI assistant integration
+    // ... test implementation
   });
 
   test("should toggle prompt active status", async () => {
-    // Test status management
+    render(<PromptsPage />);
+
+    // Test status toggle functionality
+    // ... test implementation
   });
 });
 ```
@@ -502,101 +512,33 @@ describe("PromptsPage", () => {
 ### Integration Tests
 
 - **Full Workflow**: Test complete prompt lifecycle
-- **AI Integration**: Test assistant functionality
+- **AI Integration**: Test assistant functionality and suggestion application
 - **Real-time Updates**: Test subscription mechanisms
 - **Cross-component**: Test integration with chat system
 
-### E2E Tests
+## Accessibility
 
-- **User Journeys**: Test complete user workflows
-- **Performance**: Test with large numbers of prompts
-- **Error Scenarios**: Test error handling and recovery
-- **Accessibility**: Test keyboard navigation and screen readers
+### Keyboard Navigation
 
-## Configuration
+- **Tab Order**: Proper tab navigation through form fields and buttons
+- **Enter Key**: Submit forms and activate buttons
+- **Escape Key**: Cancel edit mode and close dialogs
+- **Arrow Keys**: Navigate through prompt list items
 
-### Environment Variables
+### Screen Reader Support
 
-```bash
-# AI Model Configuration
-DEFAULT_MODEL_ID=apac.anthropic.claude-sonnet-4-20250514-v1:0
-MAX_PROMPT_LENGTH=4000
-AUTO_SAVE_INTERVAL=30000
-
-# Feature Flags
-ENABLE_AI_ASSISTANT=true
-ENABLE_REAL_TIME_SYNC=true
-ENABLE_PROMPT_TEMPLATES=true
-
-# Performance Settings
-MAX_CHAT_HISTORY=50
-DEBOUNCE_DELAY=300
-RETRY_ATTEMPTS=3
-```
-
-### Amplify Configuration
-
-```typescript
-// amplify/data/resource.ts
-export const schema = a.schema({
-  systemPrompts: a
-    .model({
-      name: a.string().required(),
-      content: a.string().required(),
-      isActive: a.boolean().default(true),
-      createdAt: a.datetime(),
-      updatedAt: a.datetime(),
-    })
-    .authorization((allow) => [allow.authenticated()]),
-});
-```
-
-## Monitoring and Analytics
-
-### Usage Tracking
-
-- **Prompt Creation**: Track new prompt creation rates
-- **AI Assistant Usage**: Monitor assistant interaction patterns
-- **Popular Prompts**: Identify most-used prompts
-- **Error Rates**: Track and analyze error patterns
-
-### Performance Metrics
-
-- **Response Times**: Monitor API and AI response speeds
-- **User Engagement**: Track time spent on prompt creation
-- **Success Rates**: Measure prompt creation completion rates
-- **User Satisfaction**: Collect feedback on AI assistance quality
-
-### Debug Information
-
-```typescript
-// Debug logging for development
-const DEBUG_MODE = process.env.NODE_ENV === "development";
-
-const debugLog = (operation: string, data: any) => {
-  if (DEBUG_MODE) {
-    console.log(`[PromptsPage] ${operation}:`, data);
-  }
-};
-
-// Usage
-debugLog("Prompt Created", {
-  name: prompt.name,
-  length: prompt.content.length,
-});
-debugLog("AI Response", {
-  responseTime: duration,
-  suggestions: response.suggestions,
-});
-```
+- **ARIA Labels**: Proper labeling for all interactive elements
+- **Role Attributes**: Semantic HTML with appropriate roles
+- **Live Regions**: Announce dynamic content changes
+- **Focus Management**: Proper focus handling during operations
 
 ## Future Enhancements
 
 ### Planned Features
 
-- **Prompt Templates**: Pre-built prompt library
-- **Collaboration Tools**: Multi-user prompt editing
-- **Version Control**: Track prompt changes and history
+- **Prompt Templates**: Pre-built prompt library for common use cases
+- **Collaboration Tools**: Multi-user prompt editing and sharing
+- **Version Control**: Track prompt changes and maintain history
 - **A/B Testing**: Compare prompt effectiveness
 - **Advanced Analytics**: Detailed usage and performance insights
 - **Import/Export**: Backup and share prompt collections
@@ -607,15 +549,7 @@ debugLog("AI Response", {
 - **Advanced Search**: Full-text search across prompt content
 - **Categorization**: Organize prompts by tags and categories
 - **Performance Optimization**: Enhanced caching and lazy loading
-- **Mobile App**: Native mobile application for prompt management
-
-### AI Enhancements
-
-- **Multi-model Support**: Support for different AI models
-- **Prompt Validation**: Automated prompt quality assessment
-- **Performance Prediction**: Predict prompt effectiveness
-- **Auto-optimization**: Automatic prompt improvement suggestions
-- **Context Awareness**: Smart suggestions based on usage patterns
+- **Mobile Optimization**: Touch-friendly interface for mobile devices
 
 ## Dependencies
 
@@ -631,32 +565,13 @@ debugLog("AI Response", {
 - **Radix UI**: Accessible component primitives
 - **Tailwind CSS**: Utility-first CSS framework
 - **Lucide React**: Icon library for visual elements
-- **React Hook Form**: Form state management and validation
+- **Sonner**: Toast notifications for user feedback
 
-### Utility Dependencies
+### Custom Components
 
-- **Date-fns**: Date manipulation and formatting
-- **Lodash**: Utility functions for data manipulation
-- **Uuid**: Unique identifier generation
-
-## Related Files
-
-### Backend Configuration
-
-- `amplify/data/resource.ts`: Database schema for system prompts
-- `amplify/functions/chat-bedrock-tools/`: AI processing functions
-
-### Frontend Components
-
-- `src/components/ui/`: Reusable UI components
-- `src/lib/types.ts`: TypeScript type definitions
-- `src/hooks/`: Custom React hooks for prompt management
-
-### Configuration Files
-
-- `amplify/backend.ts`: Main Amplify configuration
-- `next.config.ts`: Next.js configuration
-- `tailwind.config.ts`: Tailwind CSS configuration
+- **ChatAssistant**: AI assistant component for prompt help
+- **ReadmeDisplay**: Documentation display component
+- **UseSimpleHeader**: Header management hook
 
 ## Troubleshooting
 
@@ -664,49 +579,39 @@ debugLog("AI Response", {
 
 #### AI Assistant Not Responding
 
-```bash
-# Check AI service availability
-curl -X POST https://api.bedrock.aws.com/health
-
-# Verify authentication
-aws sts get-caller-identity
-
-# Check Amplify function logs
-amplify function logs chat-bedrock-tools
-```
+- **Check Model Availability**: Verify AI model is accessible
+- **Validate Input**: Ensure input meets requirements
+- **Check Network**: Verify internet connectivity
+- **Review Logs**: Check console for error messages
 
 #### Prompts Not Saving
 
-- Verify form validation (name and content required)
-- Check network connectivity
-- Confirm AWS Amplify configuration
-- Review browser console for errors
+- **Verify Form Data**: Check that name and content are filled
+- **Check Permissions**: Ensure user has proper permissions
+- **Network Issues**: Verify AWS Amplify connectivity
+- **Validate Input**: Ensure content meets requirements
 
 #### Real-time Updates Not Working
 
-- Verify WebSocket connection
-- Check subscription status in browser DevTools
-- Confirm Amplify real-time configuration
-- Test with multiple browser tabs
-
-#### Performance Issues
-
-- Monitor memory usage in browser DevTools
-- Check for memory leaks in subscriptions
-- Verify cleanup in useEffect hooks
-- Consider reducing chat history size
+- **Check Subscription**: Verify AWS Amplify subscription is active
+- **WebSocket Connection**: Ensure WebSocket connectivity
+- **Authentication**: Verify user authentication status
+- **Network Connectivity**: Check internet connection
 
 ### Debug Mode
 
 ```typescript
 // Enable comprehensive debugging
-localStorage.setItem("debug", "prompts:*");
+const DEBUG_MODE = process.env.NODE_ENV === "development";
 
-// Monitor specific operations
-localStorage.setItem("debug", "prompts:create,prompts:ai");
-
-// View debug output in console
-console.log("[PromptsPage] Debug information available");
+if (DEBUG_MODE) {
+  console.log("[PromptsPage] State:", {
+    promptsCount: systemPrompts.length,
+    isEditing,
+    formData,
+    loading,
+  });
+}
 ```
 
 ## Contributing
@@ -729,12 +634,12 @@ console.log("[PromptsPage] Debug information available");
 
 ### Code Style Guidelines
 
-- Follow TypeScript best practices
-- Use descriptive variable and function names
-- Add JSDoc comments for complex functions
-- Implement proper error handling
+- Follow React and TypeScript best practices
+- Use meaningful variable and function names
+- Add comprehensive error handling
+- Include detailed logging for debugging
 - Write unit tests for new functionality
-- Follow React hooks best practices
+- Follow AWS Amplify patterns for data operations
 
 ## License
 

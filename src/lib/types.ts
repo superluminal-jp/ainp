@@ -28,3 +28,35 @@ export interface Template {
   databases: string[];
   tools?: string[];
 }
+
+// AI Suggestion Types
+export interface ToolSuggestion {
+  name?: string;
+  description?: string;
+  executionCode?: string;
+  requirements?: string;
+  inputSchema?: {
+    type: string;
+    properties: Record<string, {
+      type: string;
+      description: string;
+      items?: { type: string };
+    }>;
+    required: string[];
+  };
+}
+
+export interface PromptSuggestion {
+  name?: string;
+  content?: string;
+}
+
+export interface JSONParseResult {
+  [key: string]: unknown;
+}
+
+export interface SchemaPropertyInput {
+  type: string;
+  description: string;
+  items?: { type: string };
+}

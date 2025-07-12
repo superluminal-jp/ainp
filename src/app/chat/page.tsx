@@ -2,7 +2,6 @@
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -40,22 +39,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useHeader } from "@/components/header-context";
 
 import { AppHeader } from "@/components/app-header";
+import ChatDisplay from "@/components/chat-display";
+import ChatInput from "@/components/chat-input";
 import {
-  Send,
-  Paperclip,
-  X,
   Database,
   Settings,
   MessageSquare,
   Clock,
   MoreVertical,
-  Copy,
-  ThumbsUp,
-  ThumbsDown,
   RefreshCcw,
   Zap,
   Mic,
@@ -234,11 +229,7 @@ export default function ChatPage() {
     tools: [] as string[],
   });
   const [messages, setMessages] = useState<Message[]>([]);
-  const [inputMessage, setInputMessage] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const [attachedFile, setAttachedFile] = useState<File | null>(null);
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [messageMode, setMessageMode] = useState<"text" | "voice">("text");
   const [activeTab, setActiveTab] = useState<"chat" | "history">("chat");
   const [showConfiguration, setShowConfiguration] = useState(true);
@@ -579,62 +570,15 @@ export default function ChatPage() {
     });
   }, [setHeaderProps, headerDescription, headerActions]);
 
-  useEffect(() => {
-    // Auto-scroll to bottom when new messages arrive
-    if (scrollAreaRef.current) {
-      const scrollContainer = scrollAreaRef.current.querySelector(
-        "[data-radix-scroll-area-viewport]"
-      );
-      if (scrollContainer) {
-        scrollContainer.scrollTop = scrollContainer.scrollHeight;
-      } else {
-        console.warn("⚠️ [ChatPage] Scroll container not found");
-      }
-    } else {
-      console.warn("⚠️ [ChatPage] Scroll area ref not available");
-    }
-  }, [messages]);
-
-  const handleSendMessage = async () => {
+  const handleSendMessage = async (message: string, files?: File[]) => {
     console.log("🔄 [ChatPage] handleSendMessage called");
-
-    const trimmedInput = inputMessage.trim();
-
-    // Ensure we have actual text input (not just file attachment)
-    if (!trimmedInput && !attachedFile) {
-      console.log("⚠️ [ChatPage] No message or file to send, returning early");
-      return;
-    }
-
-    // Ensure we have meaningful content (either text or file)
-    if (!trimmedInput && !attachedFile) {
-      console.log("⚠️ [ChatPage] No meaningful content to send");
-      toast.error("Please enter a message or attach a file");
-      return;
-    }
-
-    let text = trimmedInput;
-    const files: File[] = [];
-
-    if (attachedFile) {
-      files.push(attachedFile);
-      // If no text input, create a meaningful message about the file
-      if (!trimmedInput) {
-        text = `I've attached a file: ${attachedFile.name}. Please help me with this file.`;
-      } else {
-        text += `\n📎 ${attachedFile.name}`;
-      }
-      console.log(
-        `📎 [ChatPage] File attached: ${attachedFile.name} (${attachedFile.size} bytes)`
-      );
-    }
 
     const newMessage: Message = {
       id: Date.now().toString(),
-      text,
+      text: message,
       role: "user",
       timestamp: new Date(),
-      files: files.length > 0 ? files : undefined,
+      files: files,
     };
 
     console.log("💬 [ChatPage] New user message:", {
@@ -645,8 +589,6 @@ export default function ChatPage() {
     });
 
     setMessages((prev) => [...prev, newMessage]);
-    setInputMessage("");
-    setAttachedFile(null);
     setIsTyping(true);
 
     console.log(
@@ -945,46 +887,6 @@ export default function ChatPage() {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      console.log("⌨️ [ChatPage] Enter key pressed, sending message");
-      handleSendMessage();
-    }
-  };
-
-  const handleFileSelect = () => {
-    console.log("📁 [ChatPage] File selection triggered");
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      console.log("📎 [ChatPage] File selected:", {
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        lastModified: new Date(file.lastModified).toISOString(),
-      });
-      setAttachedFile(file);
-      toast.success(`File attached: ${file.name}`);
-    } else {
-      console.log("⚠️ [ChatPage] No file selected");
-    }
-  };
-
-  const removeAttachedFile = () => {
-    if (attachedFile) {
-      console.log(`🗑️ [ChatPage] Removing attached file: ${attachedFile.name}`);
-      setAttachedFile(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-      toast.info("File removed");
-    }
-  };
-
   const copyToClipboard = (text: string) => {
     console.log(
       `📋 [ChatPage] Copying text to clipboard (${text.length} characters)`
@@ -1000,72 +902,12 @@ export default function ChatPage() {
   };
 
   const renderChatContent = () => (
-    <ScrollArea ref={scrollAreaRef} className="h-full p-4">
-      <div className="max-w-4xl mx-auto space-y-4">
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex ${message.role === "user" ? "justify-end" : "justify-start"} group`}
-          >
-            <div className="max-w-[80%]">
-              <div
-                className={`px-4 py-3 rounded-lg relative ${
-                  message.role === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted"
-                }`}
-              >
-                <p className="text-sm whitespace-pre-wrap">{message.text}</p>
-              </div>
-              <div
-                className={`flex items-center ${
-                  message.role === "user" ? "justify-end" : "justify-start"
-                }  gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity`}
-              >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={() => copyToClipboard(message.text)}
-                >
-                  <Copy className="h-3 w-3" />
-                </Button>
-                {message.role === "assistant" && (
-                  <>
-                    <Button variant="ghost" size="icon" className="h-6 w-6">
-                      <ThumbsUp className="h-3 w-3" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6">
-                      <ThumbsDown className="h-3 w-3" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6"
-                      onClick={() => regenerateResponse()}
-                    >
-                      <RefreshCcw className="h-3 w-3" />
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
-
-        {isTyping && (
-          <div className="flex justify-start">
-            <div className="bg-muted px-4 py-3 rounded-lg max-w-[80%]">
-              <div className="flex space-x-1">
-                <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce delay-75"></div>
-                <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce delay-150"></div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </ScrollArea>
+    <ChatDisplay
+      messages={messages}
+      isTyping={isTyping}
+      onCopy={copyToClipboard}
+      onRegenerate={regenerateResponse}
+    />
   );
 
   const renderHistoryContent = () => (
@@ -1699,25 +1541,6 @@ export default function ChatPage() {
               </div>
             )}
 
-            {attachedFile && (
-              <div className="p-3 bg-muted rounded-lg flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Paperclip className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground truncate">
-                    {attachedFile.name}
-                  </span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={removeAttachedFile}
-                  className="h-6 w-6 p-0"
-                >
-                  <X className="h-3 w-3" />
-                </Button>
-              </div>
-            )}
-
             <div className="flex items-center gap-2">
               {/* Chat/History Toggle Button */}
               <Toggle
@@ -1789,59 +1612,17 @@ export default function ChatPage() {
 
               {/* Message Input - Only show when on chat tab */}
               {activeTab === "chat" ? (
-                <div className="flex gap-2 flex-1 items-end">
-                  <Textarea
+                <div className="flex-1">
+                  <ChatInput
+                    onSendMessage={handleSendMessage}
                     placeholder={
                       messageMode === "text"
                         ? "Type your message here... (Shift+Enter for new line, Enter to send)"
                         : "Voice mode - click to record"
                     }
-                    value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    className="flex-1 min-h-[40px] max-h-[120px] resize-none"
-                    disabled={messageMode === "voice"}
-                    rows={1}
+                    disabled={messageMode === "voice" || isTyping}
+                    allowFileAttach={true}
                   />
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        onClick={handleFileSelect}
-                        variant="outline"
-                        size="icon"
-                        className="shrink-0"
-                      >
-                        <Paperclip className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Attach file</p>
-                    </TooltipContent>
-                  </Tooltip>
-
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        onClick={handleSendMessage}
-                        disabled={
-                          (!inputMessage.trim() && !attachedFile) || isTyping
-                        }
-                        size="icon"
-                        className="shrink-0"
-                      >
-                        <Send className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Send message (Enter)</p>
-                    </TooltipContent>
-                  </Tooltip>
                 </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">

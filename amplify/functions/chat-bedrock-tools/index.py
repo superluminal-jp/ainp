@@ -453,6 +453,7 @@ def handler(event, context):
         use_tools = arguments.get("useTools", True)
         selected_tool_ids = arguments.get("selectedToolIds", [])
         response_format = arguments.get("responseFormat", None)
+        force_structured_output = arguments.get("forceStructuredOutput", False)
 
         if not isinstance(messages_data, list) or not messages_data:
             raise ValueError("Messages array is required and must be non-empty")
@@ -578,12 +579,23 @@ def handler(event, context):
         if not final_response_text:
             final_response_text = "I apologize, but I couldn't generate a response."
 
+        # Check if structured output was requested and response is valid JSON
+        is_structured_output = False
+        if force_structured_output:
+            try:
+                # Try to parse the response as JSON to validate it's structured
+                json.loads(final_response_text)
+                is_structured_output = True
+            except json.JSONDecodeError:
+                # Response is not valid JSON, treat as regular text
+                is_structured_output = False
+
         return {
             "response": final_response_text,
             "modelId": model_id,
             "usage": usage,
             "toolsUsed": len(tool_use_blocks) if tool_use_blocks else 0,
-            "structuredOutput": response_format is not None,
+            "structuredOutput": is_structured_output,
         }
 
     except ValueError as e:

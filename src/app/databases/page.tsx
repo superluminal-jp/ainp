@@ -1276,7 +1276,7 @@ export default function DatabasesPage() {
                 {Object.keys(embeddingProgress).length > 0 && (
                   <div className="space-y-2">
                     <Label className="text-xs">Embedding Status</Label>
-                    <div className="max-h-24 overflow-y-auto space-y-1 p-2 border rounded-md bg-orange-50 dark:bg-orange-950 border-orange-200 dark:border-orange-800">
+                    <div className="max-h-24 overflow-y-auto space-y-1 p-2 border rounded-md bg-muted/50 border-border">
                       {Object.entries(embeddingProgress).map(
                         ([fileName, status]) => (
                           <div
@@ -1290,7 +1290,7 @@ export default function DatabasesPage() {
                             </div>
                             <div className="flex items-center space-x-1">
                               {status === "Embedding in progress..." && (
-                                <div className="animate-spin h-2 w-2 border border-orange-500 border-t-transparent rounded-full"></div>
+                                <div className="animate-spin h-2 w-2 border border-muted-foreground border-t-transparent rounded-full"></div>
                               )}
                               {status === "Embedding completed" && (
                                 <CheckCircle className="h-2 w-2 text-green-500" />
@@ -1517,10 +1517,10 @@ export default function DatabasesPage() {
 
                   {/* Embedding Progress Section */}
                   {Object.keys(embeddingProgress).length > 0 && (
-                    <Card className="border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950">
+                    <Card className="border-border bg-muted/50">
                       <CardHeader className="pb-2">
                         <CardTitle className="text-sm flex items-center space-x-2">
-                          <Database className="h-4 w-4 text-orange-500" />
+                          <Database className="h-4 w-4 text-muted-foreground" />
                           <span>Embedding Status</span>
                         </CardTitle>
                       </CardHeader>
@@ -1538,10 +1538,10 @@ export default function DatabasesPage() {
                               </div>
                               <div className="flex items-center space-x-2">
                                 {status === "Embedding in progress..." && (
-                                  <div className="animate-spin h-3 w-3 border-2 border-orange-500 border-t-transparent rounded-full"></div>
+                                  <div className="animate-spin h-3 w-3 border-2 border-muted-foreground border-t-transparent rounded-full"></div>
                                 )}
                                 {status === "Embedding completed" && (
-                                  <CheckCircle className="h-3 w-3 text-green-500" />
+                                  <CheckCircle className="h-3 w-3 text-blue-500" />
                                 )}
                                 {status === "Embedding failed" && (
                                   <AlertCircle className="h-3 w-3 text-red-500" />

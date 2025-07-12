@@ -15,10 +15,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useSimpleHeader } from "@/components/use-page-header";
 import { AppHeader } from "@/components/app-header";
 import { ReadmeDisplay } from "@/components/readme-display";
+import ChatAssistant from "@/components/chat-assistant";
 import {
   Edit,
   Trash2,
@@ -27,14 +28,13 @@ import {
   X,
   Check,
   Code,
-  Bot,
-  Send,
-  User,
   FileText,
 } from "lucide-react";
 
 import type { Schema } from "../../../amplify/data/resource";
 import { generateClient } from "aws-amplify/data";
+import { toast } from "sonner";
+import type { ToolSuggestion } from "@/lib/types";
 
 const client = generateClient<Schema>();
 
@@ -66,13 +66,6 @@ interface ToolSpec {
   executionCode?: string;
   requirements?: string;
   isActive: boolean;
-}
-
-// Chat message interface
-interface ChatMessage {
-  role: "user" | "assistant";
-  text: string;
-  timestamp: string;
 }
 
 export default function ToolsPage() {
@@ -209,12 +202,6 @@ def handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Chat assistant state
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [inputMessage, setInputMessage] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
   // Schema property management
   const [newProperty, setNewProperty] = useState({
     name: "",
@@ -225,6 +212,45 @@ def handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
 
   // UI state
   const [showReadme, setShowReadme] = useState(false);
+
+  // AI Assistant system prompt
+  const TOOLS_ASSISTANT_PROMPT = `You are an expert AI assistant specialized in helping users create custom tools with Python Lambda functions. Your role is to:
+
+**Primary Functions:**
+- Generate Python Lambda function code for custom tools
+- Create comprehensive input schemas for tool parameters
+- Suggest appropriate Python package requirements
+- Provide optimization and best practice guidance
+- Help users understand tool development concepts
+
+**Response Format:**
+You will use structured output to return a JSON object with the tool specification. The response will be automatically formatted as JSON with the following fields:
+
+- **name**: Tool name (string)
+- **description**: Detailed tool description (string)
+- **requirements**: Python package requirements, one per line (string)
+- **executionCode**: Complete Python Lambda function code (string)
+- **inputSchema**: JSON schema object with type, properties, and required fields
+
+**Example Tool Concept:**
+A data validation tool that checks data integrity, formats, and constraints. Supports validation of JSON objects, arrays, strings, numbers, and custom business rules. Includes detailed error reporting and flexible validation schemas.
+
+**Code Standards:**
+- Generate AWS Lambda-compatible Python code
+- Handler function must be named handler
+- Include proper error handling and response formatting
+- Use type hints and docstrings
+- Follow security best practices
+- Return standardized JSON responses
+- Use proper line breaks and formatting in code
+
+**Important Notes:**
+- Response will be automatically formatted as structured JSON
+- Include all required fields: name, description, requirements, executionCode, inputSchema
+- Requirements should list Python packages one per line
+- Make tools practical and immediately usable
+
+Be helpful, practical, and provide actionable suggestions that users can immediately apply to their tool development.`;
 
   useEffect(() => {
     // Subscribe to real-time updates for all tool specs
@@ -449,6 +475,7 @@ def handler(event, context):
   };
 
   const clearForm = () => {
+    console.log("🗑️ Clearing form data");
     setFormData({
       name: "",
       description: "",
@@ -503,6 +530,122 @@ def handler(event, context):
     });
   };
 
+  const handleSuggestionReceived = (suggestions: ToolSuggestion) => {
+    console.log("🔍 AI suggestions received:", suggestions);
+    console.log("🔍 Suggestions type:", typeof suggestions);
+    console.log("🔍 Suggestions keys:", Object.keys(suggestions || {}));
+
+    // Apply suggestions to form data
+    setFormData((prev) => {
+      const updated = { ...prev };
+
+      if (suggestions.name) {
+        updated.name = suggestions.name;
+        console.log("✅ Applied name suggestion:", suggestions.name);
+      }
+
+      if (suggestions.description) {
+        updated.description = suggestions.description;
+        console.log(
+          "✅ Applied description suggestion:",
+          suggestions.description
+        );
+      }
+
+      if (suggestions.executionCode) {
+        // Use structured output directly (no escape conversion needed)
+        updated.executionCode = suggestions.executionCode;
+        console.log(
+          "✅ Applied execution code suggestion (length):",
+          suggestions.executionCode.length
+        );
+        console.log(
+          "✅ Execution code preview:",
+          updated.executionCode?.substring(0, 100) + "..."
+        );
+      } else {
+        console.log("❌ No executionCode found in suggestions");
+      }
+
+      if (suggestions.requirements) {
+        // Use structured output directly (no escape conversion needed)
+        updated.requirements = suggestions.requirements;
+        console.log(
+          "✅ Applied requirements suggestion:",
+          updated.requirements
+        );
+      }
+
+      if (suggestions.inputSchema) {
+        // Handle input schema suggestions
+        try {
+          const schema =
+            typeof suggestions.inputSchema === "string"
+              ? JSON.parse(suggestions.inputSchema)
+              : suggestions.inputSchema;
+
+          if (schema.properties) {
+            // Convert schema properties to the expected format
+            const convertedProperties: Record<string, SchemaProperty> = {};
+
+            Object.entries(schema.properties).forEach(([key, propValue]) => {
+              const prop = propValue as {
+                type?: string;
+                description?: string;
+                items?: { type: string };
+              };
+              convertedProperties[key] = {
+                type: prop.type || "string",
+                description: prop.description || "",
+                ...(prop.type === "array" && prop.items
+                  ? { items: prop.items }
+                  : {}),
+              };
+            });
+
+            updated.inputSchema = {
+              type: "object",
+              properties: convertedProperties,
+              required: schema.required || [],
+            };
+
+            console.log("Applied input schema suggestion:", {
+              properties: convertedProperties,
+              required: schema.required || [],
+              originalSchema: schema,
+              propertyCount: Object.keys(convertedProperties).length,
+            });
+
+            // Force a re-render by updating form data in next tick
+            setTimeout(() => {
+              console.log("Current form data after schema update:", {
+                schemaProperties: Object.keys(updated.inputSchema.properties),
+                propertyCount: Object.keys(updated.inputSchema.properties)
+                  .length,
+              });
+            }, 0);
+          }
+        } catch (error) {
+          console.error("Error parsing input schema suggestion:", error);
+        }
+      }
+
+      return updated;
+    });
+
+    // Show success message
+    const appliedFields = [];
+    if (suggestions.name) appliedFields.push("name");
+    if (suggestions.description) appliedFields.push("description");
+    if (suggestions.executionCode) appliedFields.push("code");
+    if (suggestions.requirements) appliedFields.push("requirements");
+    if (suggestions.inputSchema) appliedFields.push("schema");
+
+    if (appliedFields.length > 0) {
+      toast.success(`Applied AI suggestions to: ${appliedFields.join(", ")}`);
+    }
+  };
+
   const removeSchemaProperty = (propertyName: string) => {
     setFormData((prev) => {
       const newProperties = { ...prev.inputSchema.properties };
@@ -523,278 +666,6 @@ def handler(event, context):
     });
   };
 
-  // Handlers for AI assistant suggestions
-  const handleApplyName = (name: string) => {
-    setFormData((prev) => ({ ...prev, name }));
-  };
-
-  const handleApplyDescription = (description: string) => {
-    setFormData((prev) => ({ ...prev, description }));
-  };
-
-  const handleApplyCode = (code: string) => {
-    setFormData((prev) => ({ ...prev, executionCode: code }));
-  };
-
-  const handleApplyRequirements = (requirements: string) => {
-    setFormData((prev) => ({ ...prev, requirements }));
-  };
-
-  const handleApplyInputSchema = (suggestedSchema: {
-    properties: Record<string, SchemaProperty>;
-    required?: string[];
-  }) => {
-    setFormData((prev) => ({
-      ...prev,
-      inputSchema: {
-        type: "object",
-        properties: {
-          ...prev.inputSchema.properties,
-          ...suggestedSchema.properties,
-        },
-        required: suggestedSchema.required
-          ? Array.from(
-              new Set([
-                ...prev.inputSchema.required,
-                ...suggestedSchema.required,
-              ])
-            )
-          : prev.inputSchema.required,
-      },
-    }));
-  };
-
-  // Chat assistant methods
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  // Initialize with a helpful system message
-  useEffect(() => {
-    if (messages.length === 0) {
-      setMessages([
-        {
-          role: "assistant",
-          text: "Hello! I'm here to help you create and enhance custom tools. I can:\n\n• Generate tool names and descriptions\n• Create Python execution code for your tools\n• Suggest input schema properties\n• Help with package requirements\n• Provide code examples and best practices\n• Debug and improve existing tool code\n\nWhat would you like to work on today?",
-          timestamp: new Date().toISOString(),
-        },
-      ]);
-    }
-  }, [messages.length]);
-
-  // Auto-scroll when messages change
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, isLoading]);
-
-  const sendMessage = async () => {
-    if (!inputMessage.trim() || isLoading) return;
-
-    const userMessage: ChatMessage = {
-      role: "user",
-      text: inputMessage,
-      timestamp: new Date().toISOString(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInputMessage("");
-    setIsLoading(true);
-
-    try {
-      const systemPrompt = `You are a helpful AI assistant specializing in creating custom tools and Python code for AWS Lambda functions.
-
-Your role is to help users create, improve, and optimize custom tools with proper execution code. You should:
-
-1. **Generate Names**: Create clear, descriptive names for tools based on their purpose
-2. **Create Descriptions**: Write detailed descriptions explaining what the tool does
-3. **Write Code**: Generate Python code for AWS Lambda handler functions that follow best practices
-4. **Suggest Schema**: Recommend input schema properties and types
-5. **Package Requirements**: Suggest pip packages needed for the tool functionality
-6. **Debug Code**: Help fix issues in existing tool code
-7. **Best Practices**: Provide guidance on error handling, response formats, and Lambda patterns
-
-Current tool being worked on:
-- Name: "${formData.name}"
-- Description: "${formData.description}"
-- Requirements: "${formData.requirements}"
-- Has execution code: ${formData.executionCode ? "Yes" : "No"}
-
-**IMPORTANT**: You must respond in JSON format with the following structure:
-{
-  "message": "Your helpful response and guidance to the user",
-  "suggestions": {
-    "name": "Suggested tool name (if applicable)",
-    "description": "Suggested tool description (if applicable)",
-    "executionCode": "Complete Python Lambda function code (if applicable)",
-    "requirements": "pip packages separated by newlines (if applicable)",
-    "inputSchema": {
-      "properties": {
-        "param1": {
-          "type": "string",
-          "description": "Description of param1"
-        }
-      },
-      "required": ["param1"]
-    }
-  },
-  "tips": ["Tip 1 about Lambda best practices", "Tip 2 about error handling", "Tip 3 about tool development"]
-}
-
-Always provide:
-- A helpful message with your advice
-- Specific suggestions for any relevant fields (name, description, code, requirements)
-- 2-3 practical tips for tool development and Lambda functions
-- Use def handler(event, context) as the function name
-
-When suggesting code, always include:
-- Proper error handling with try/catch blocks
-- AWS Lambda response format with statusCode and body
-- Input validation and parameter extraction
-- Clear documentation and comments
-- Appropriate imports and dependencies
-
-When suggesting input schema, provide:
-- Clear, descriptive property names
-- Appropriate data types (string, number, boolean, array)
-- Detailed descriptions for each property
-- Proper required field specifications
-
-Make your suggestions actionable and immediately useful. Focus on working, production-ready code.`;
-
-      const response = await client.queries.chatWithBedrockTools({
-        messages: messages.concat(userMessage),
-        systemPrompt,
-        modelId: "apac.anthropic.claude-sonnet-4-20250514-v1:0",
-        useTools: false,
-        databaseIds: [],
-        selectedToolIds: [],
-        responseFormat: {
-          json: {
-            type: "object",
-            properties: {
-              message: {
-                type: "string",
-                description: "The main response message to the user",
-              },
-              suggestions: {
-                type: "object",
-                properties: {
-                  name: {
-                    type: "string",
-                    description: "Suggested tool name",
-                  },
-                  description: {
-                    type: "string",
-                    description: "Suggested tool description",
-                  },
-                  executionCode: {
-                    type: "string",
-                    description: "Suggested Python execution code",
-                  },
-                  requirements: {
-                    type: "string",
-                    description: "Suggested pip requirements",
-                  },
-                  inputSchema: {
-                    type: "object",
-                    properties: {
-                      properties: {
-                        type: "object",
-                        description: "Schema properties object",
-                      },
-                      required: {
-                        type: "array",
-                        items: { type: "string" },
-                        description: "Required property names",
-                      },
-                    },
-                    description: "Suggested input schema structure",
-                  },
-                },
-                description: "Suggested values for the tool form fields",
-              },
-              tips: {
-                type: "array",
-                items: {
-                  type: "string",
-                },
-                description: "Helpful tips for tool development",
-              },
-            },
-            required: ["message"],
-          },
-        },
-      });
-
-      if (response.data) {
-        let responseText = response.data.response;
-        let parsedResponse = null;
-
-        // Try to parse structured response
-        try {
-          parsedResponse = JSON.parse(responseText);
-          if (parsedResponse && parsedResponse.message) {
-            responseText = parsedResponse.message;
-
-            // Add tips if available
-            if (parsedResponse.tips && Array.isArray(parsedResponse.tips)) {
-              const tips = parsedResponse.tips as string[];
-              responseText +=
-                "\n\nTips:\n" + tips.map((tip) => `• ${tip}`).join("\n");
-            }
-          }
-        } catch (error) {
-          // If parsing fails, use the raw response
-          console.log("Using raw response text", error);
-        }
-
-        const assistantMessage: ChatMessage = {
-          role: "assistant",
-          text: responseText,
-          timestamp: new Date().toISOString(),
-        };
-        setMessages((prev) => [...prev, assistantMessage]);
-
-        // Auto-apply suggestions if available
-        if (parsedResponse && parsedResponse.suggestions) {
-          const suggestions = parsedResponse.suggestions;
-          if (suggestions.name && suggestions.name.trim()) {
-            handleApplyName(suggestions.name.trim());
-          }
-          if (suggestions.description && suggestions.description.trim()) {
-            handleApplyDescription(suggestions.description.trim());
-          }
-          if (suggestions.executionCode && suggestions.executionCode.trim()) {
-            handleApplyCode(suggestions.executionCode.trim());
-          }
-          if (suggestions.requirements && suggestions.requirements.trim()) {
-            handleApplyRequirements(suggestions.requirements.trim());
-          }
-          if (suggestions.inputSchema && suggestions.inputSchema.properties) {
-            handleApplyInputSchema(suggestions.inputSchema);
-          }
-        }
-      }
-    } catch (error) {
-      console.error("Error sending message:", error);
-      const errorMessage: ChatMessage = {
-        role: "assistant",
-        text: "I apologize, but I encountered an error while processing your message. Please try again.",
-        timestamp: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
-
   return (
     <>
       <AppHeader />
@@ -811,7 +682,6 @@ Make your suggestions actionable and immediately useful. Focus on working, produ
         )}
 
         <div className="flex-1 flex">
-          {/* Updated to flex-1 to take remaining space */}
           {/* Form Panel */}
           <div className="w-1/4 border-r border-border p-3">
             <Card className="h-full flex flex-col">
@@ -1117,114 +987,19 @@ def handler(event, context):
                     </Button>
                   )}
                 </div>
-
-                {/* AI Assistant Info */}
-                <div className="pt-2 border-t">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-muted-foreground">
-                      AI Assistant available in chat panel →
-                    </span>
-                  </div>
-                </div>
               </CardContent>
             </Card>
           </div>
 
-          {/* Chat Assistant Panel */}
+          {/* AI Assistant Panel */}
           <div className="w-1/3 border-r border-border p-3">
-            <Card className="h-full flex flex-col">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Bot className="h-4 w-4" />
-                  Tool Assistant
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex-1 flex flex-col min-h-0 p-3">
-                <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                  <ScrollArea className="flex-1 pr-4 h-0">
-                    <div className="space-y-4 p-2">
-                      {messages.map((message, index) => (
-                        <div
-                          key={index}
-                          className={`flex ${
-                            message.role === "user"
-                              ? "justify-end"
-                              : "justify-start"
-                          }`}
-                        >
-                          <div
-                            className={`max-w-[80%] rounded-lg px-3 py-2 ${
-                              message.role === "user"
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-muted"
-                            }`}
-                          >
-                            <div className="flex items-start gap-2">
-                              {message.role === "assistant" && (
-                                <Bot className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                              )}
-                              {message.role === "user" && (
-                                <User className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                              )}
-                              <div className="flex-1">
-                                <div className="text-sm whitespace-pre-wrap">
-                                  {message.text}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      {isLoading && (
-                        <div className="flex justify-start">
-                          <div className="bg-muted rounded-lg px-3 py-2">
-                            <div className="flex items-center gap-2">
-                              <Bot className="h-4 w-4" />
-                              <div className="flex gap-1">
-                                <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
-                                <div
-                                  className="w-2 h-2 bg-current rounded-full animate-bounce"
-                                  style={{ animationDelay: "0.1s" }}
-                                ></div>
-                                <div
-                                  className="w-2 h-2 bg-current rounded-full animate-bounce"
-                                  style={{ animationDelay: "0.2s" }}
-                                ></div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                      <div ref={messagesEndRef} />
-                    </div>
-                  </ScrollArea>
-
-                  <div className="border-t pt-4 mt-4">
-                    <div className="flex gap-2">
-                      <Textarea
-                        value={inputMessage}
-                        onChange={(e) => setInputMessage(e.target.value)}
-                        onKeyPress={handleKeyPress}
-                        placeholder="Ask me to help generate tool code, schema, or requirements..."
-                        className="flex-1 resize-none"
-                        rows={2}
-                      />
-                      <Button
-                        onClick={sendMessage}
-                        disabled={!inputMessage.trim() || isLoading}
-                        size="sm"
-                        className="px-3"
-                      >
-                        <Send className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      Press Enter to send, Shift+Enter for new line
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <ChatAssistant
+              title="Tools Assistant"
+              placeholder="Ask me to help create a tool, generate code, or suggest improvements..."
+              systemPrompt={TOOLS_ASSISTANT_PROMPT}
+              onSuggestionReceived={handleSuggestionReceived}
+              suggestionType="tool"
+            />
           </div>
 
           {/* Tools List */}
@@ -1241,7 +1016,9 @@ def handler(event, context):
                 <div className="text-center py-8 text-muted-foreground">
                   <Wrench className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p className="text-sm">No custom tools created yet</p>
-                  <p className="text-xs">Create your first custom tool above</p>
+                  <p className="text-xs">
+                    Create your first custom tool using the form
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-2">

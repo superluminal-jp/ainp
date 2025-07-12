@@ -1,75 +1,80 @@
 # Databases Page Component
 
-A comprehensive database management interface built with Next.js and AWS Amplify, providing full-featured database creation, file management, and RAG (Retrieval-Augmented Generation) capabilities with vector embedding support.
+A comprehensive database management interface built with Next.js and AWS Amplify, featuring advanced file management, RAG (Retrieval-Augmented Generation) capabilities, real-time embedding progress tracking, and sophisticated error handling with a three-panel layout design.
 
 ## Overview
 
-The Databases Page (`/databases`) is the central hub for managing knowledge databases in the application, providing users with:
+The Databases Page (`/databases`) serves as the central hub for managing knowledge databases in the application, providing users with:
 
-- **Database Management**: Create, edit, and delete custom databases
-- **File Management**: Upload, organize, and manage files with drag-and-drop support
-- **RAG Integration**: Automatic vector embedding processing for uploaded files
-- **Real-time Monitoring**: Live progress tracking for embedding operations
-- **File Operations**: Preview, download, and delete files with comprehensive metadata
-- **Folder Structure**: Hierarchical visualization of storage organization
-- **Error Handling**: Comprehensive error management with user feedback
-- **AWS Integration**: Seamless integration with AWS Amplify Storage and backend services
+- **Database Management**: Create, edit, delete, and toggle database status with comprehensive CRUD operations
+- **File Management**: Upload, organize, and manage files with advanced drag-and-drop support and file preview
+- **RAG Integration**: Automatic vector embedding processing with real-time progress tracking and manual re-embedding
+- **Storage Organization**: Hierarchical folder structure visualization with expandable navigation
+- **Error Handling**: Comprehensive error management with auto-dismissal and user feedback
+- **File Operations**: Preview, download, and delete files with detailed metadata display
+- **Real-time Updates**: Live synchronization with backend changes and embedding progress
 
 ## Features
 
 ### 🗄️ Database Management
 
-- **Create Databases**: Add new knowledge bases with name and description
-- **Edit Databases**: Modify existing database information
-- **Delete Databases**: Remove databases with confirmation prompts
-- **Toggle Status**: Enable/disable databases for use in chat
-- **Real-time Updates**: Live synchronization with backend changes
+- **Create Databases**: Add new knowledge bases with name, description, and optional file uploads
+- **Edit Databases**: Modify existing database information with form pre-population
+- **Delete Databases**: Remove databases with confirmation prompts and automatic cleanup
+- **Toggle Status**: Enable/disable databases using Switch component for chat integration
+- **Real-time Updates**: Live synchronization with AWS Amplify backend changes
 
 ### 📁 File Management
 
-- **Multi-file Upload**: Upload multiple files simultaneously
-- **Drag & Drop**: Intuitive drag-and-drop interface
+- **Multi-file Upload**: Upload multiple files simultaneously with progress tracking
+- **Dual Upload Zones**: General file upload and database-specific file upload areas
+- **Drag & Drop**: Intuitive drag-and-drop interface with visual feedback
 - **File Types**: Support for various formats (TXT, MD, CSV, JSON, PDF, DOC, DOCX)
-- **File Preview**: Text-based file content preview
-- **File Download**: Direct file download functionality
-- **File Deletion**: Remove files from databases with confirmation
-- **Metadata Display**: File size, type, and upload date information
+- **File Preview**: Text-based file content preview in modal with syntax highlighting
+- **File Download**: Direct file download functionality with blob handling
+- **File Deletion**: Remove files from storage and database with confirmation prompts
+- **Metadata Display**: File size, type, upload date, and storage path information
 
 ### 🔍 RAG & Vector Embedding
 
-- **Automatic Processing**: Files automatically processed for vector embeddings
-- **Progress Tracking**: Real-time embedding status with visual indicators
-- **Manual Re-embedding**: Trigger embedding process manually for files
-- **Status Indicators**: Visual feedback for embedding success/failure
-- **Background Processing**: Non-blocking embedding operations
+- **Automatic Processing**: Files automatically processed for vector embeddings upon upload
+- **Progress Tracking**: Real-time embedding status with animated progress indicators
+- **Manual Re-embedding**: Trigger embedding process manually for existing files
+- **Status Indicators**: Visual feedback with CheckCircle, AlertCircle, and loading animations
+- **Background Processing**: Non-blocking embedding operations with progress persistence
+- **Error Recovery**: Comprehensive error handling for embedding failures with retry capabilities
 
 ### 📊 Storage Organization
 
-- **Folder Structure**: Hierarchical view of file organization
-- **Expandable Folders**: Collapsible folder navigation
-- **File Counts**: Visual indicators of folder contents
-- **Path Management**: Organized storage paths for different databases
-- **Shared Storage**: Collaborative file access across databases
+- **Folder Structure**: Hierarchical view of file organization with expandable folders
+- **Path-based Organization**: Organized storage paths (`databases/shared/`, `databases/shared/{databaseId}/`)
+- **Expandable Navigation**: Collapsible folder tree with chevron indicators
+- **File Counts**: Visual indicators showing folder contents and file counts
+- **Interactive Navigation**: Click-to-expand folders and file actions
+- **Depth Visualization**: Indented folder structure with proper nesting
 
 ### 🎛️ User Interface
 
-- **Three-Panel Layout**: Form, file list, and detailed views
-- **Responsive Design**: Adaptive interface for different screen sizes
-- **Error Display**: Contextual error messages with auto-dismissal
-- **Loading States**: Visual feedback during operations
-- **Confirmation Dialogs**: Safety prompts for destructive operations
+- **Three-Panel Layout**: Form panel (1/3), main content panel (2/3), and modal overlay
+- **Responsive Design**: Adaptive interface with proper breakpoints and mobile support
+- **Error Display**: Contextual error messages with color-coded severity and auto-dismissal
+- **Loading States**: Comprehensive loading feedback with skeleton states and progress bars
+- **Confirmation Dialogs**: Safety prompts using browser confirm() for destructive operations
+- **Toggle States**: README documentation toggle and view state management
 
 ### 🚀 Performance Features
 
-- **Lazy Loading**: Efficient data loading strategies
-- **Progress Indicators**: Visual feedback for long-running operations
-- **Optimistic Updates**: Immediate UI feedback for user actions
-- **Error Recovery**: Graceful handling of failed operations
-- **Memory Management**: Efficient state management and cleanup
+- **Lazy Loading**: Efficient data loading strategies with selective database file fetching
+- **Progress Indicators**: Visual feedback with animated spinners and progress bars
+- **Optimistic Updates**: Immediate UI feedback for user actions with rollback capability
+- **Error Recovery**: Graceful handling of failed operations with retry mechanisms
+- **Memory Management**: Efficient state cleanup and automatic progress tracking cleanup
 
 ## Architecture
 
 ### State Management
+
+The component uses comprehensive React state management with type safety:
 
 ```typescript
 // Database State
@@ -83,146 +88,84 @@ const [databaseFiles, setDatabaseFiles] = useState<
 
 // File State
 const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+const [databaseUploadFiles, setDatabaseUploadFiles] = useState<UploadedFile[]>(
+  []
+);
 const [viewingFile, setViewingFile] = useState<UploadedFile | null>(null);
 const [fileContent, setFileContent] = useState<string | null>(null);
 
 // UI State
 const [loading, setLoading] = useState(false);
 const [dragActive, setDragActive] = useState(false);
+const [isEditing, setIsEditing] = useState(false);
+const [editingDatabase, setEditingDatabase] = useState<
+  Schema["databases"]["type"] | null
+>(null);
 const [showFolderView, setShowFolderView] = useState(false);
 const [showDatabaseView, setShowDatabaseView] = useState(false);
+const [addingFilesToDatabase, setAddingFilesToDatabase] = useState(false);
+const [showReadme, setShowReadme] = useState(false);
+
+// Form State
+const [formData, setFormData] = useState({
+  name: "",
+  description: "",
+});
 
 // Embedding State
 const [embeddingProgress, setEmbeddingProgress] = useState<{
   [key: string]: string;
 }>({});
+
+// Error State
 const [errors, setErrors] = useState<ErrorState[]>([]);
+
+// Folder Structure State
+const [folderStructure, setFolderStructure] = useState<FolderStructure | null>(
+  null
+);
+```
+
+### Component Layout
+
+```
+DatabasesPage
+├── AppHeader
+├── Error Display Panel (Auto-dismissing with X buttons)
+├── README Display Section (Toggle-able)
+├── Main Content Flex Container
+│   ├── Form Panel (w-1/3)
+│   │   ├── Database Form Card
+│   │   │   ├── Name & Description Fields
+│   │   │   ├── Embedding Progress Section
+│   │   │   ├── File Upload Zone (Drag & Drop)
+│   │   │   ├── Uploaded Files List
+│   │   │   └── Action Buttons (Add/Update/Cancel)
+│   │   └── Real-time Progress Tracking
+│   └── Main Content Panel (flex-1)
+│       ├── Navigation Header with Back Button
+│       ├── Database List View
+│       ├── Database Detail View
+│       │   ├── Database Info Card
+│       │   ├── Embedding Progress Card
+│       │   ├── File Upload Card
+│       │   └── Database Files List
+│       └── Folder Structure View
+└── File Viewer Modal (Fixed overlay)
+    ├── Modal Header with Actions
+    ├── File Content Preview
+    └── Download/Close Actions
 ```
 
 ### Data Flow
 
-1. **Database Creation** → Form submission → AWS Amplify API → Database record creation
-2. **File Upload** → AWS S3 Storage → Database file record → Auto-embedding trigger
-3. **Vector Embedding** → AWS Lambda function → Vector database storage → Progress updates
-4. **File Management** → Storage operations → Database updates → UI synchronization
-5. **Real-time Updates** → AWS Amplify subscriptions → State updates → UI refresh
+1. **Database Creation** → Form validation → AWS Amplify API → Database record → File processing → Auto-embedding
+2. **File Upload** → Drag & drop or file selection → AWS S3 Storage → Database file record → Embedding trigger
+3. **Vector Embedding** → AWS Lambda mutation → Progress tracking → Status updates → UI feedback
+4. **File Management** → Storage operations → Database synchronization → Real-time UI updates
+5. **Error Handling** → Error capture → State management → Auto-dismissal → User feedback
 
-### Component Structure
-
-```
-DatabasesPage
-├── Error Display Panel
-├── Form Panel (Left 1/3)
-│   ├── Database Form
-│   ├── File Upload Zone
-│   ├── Embedding Progress
-│   └── Action Buttons
-├── Main Content Panel (Right 2/3)
-│   ├── Navigation Header
-│   ├── Database List View
-│   ├── Database Files View
-│   ├── Folder Structure View
-│   └── File Actions
-└── File Viewer Modal
-    ├── File Header
-    ├── File Content Preview
-    └── File Actions
-```
-
-## Usage
-
-### Creating a New Database
-
-1. Navigate to `/databases`
-2. Fill in database name and description
-3. Optionally upload files for initial RAG content
-4. Click "Add Database"
-5. Files automatically process for vector embeddings
-
-### Managing Database Files
-
-1. Click on a database to view its files
-2. Use the "Add Files to Database" section to upload new files
-3. Drag and drop files directly into the upload zone
-4. Monitor embedding progress in real-time
-5. Use file actions (view, download, re-embed, delete) as needed
-
-### File Operations
-
-```typescript
-// File Upload
-const handleFileUpload = async (files: FileList) => {
-  // Upload to AWS S3
-  const fileKey = `databases/shared/${Date.now()}-${file.name}`;
-  await uploadData({ path: fileKey, data: file }).result;
-
-  // Create database record
-  await client.models.databaseFiles.create({
-    databaseId: selectedDatabase.id,
-    fileName: file.name,
-    fileKey: fileKey,
-    fileSize: file.size,
-    fileType: file.type,
-  });
-
-  // Trigger embedding
-  embedFile(fileKey, file.name, databaseId, databaseFileId);
-};
-```
-
-### Vector Embedding Process
-
-```typescript
-// Embedding Process
-const embedFile = async (
-  fileKey: string,
-  fileName: string,
-  databaseId: string,
-  databaseFileId: string
-) => {
-  setEmbeddingProgress((prev) => ({
-    ...prev,
-    [fileName]: "Embedding in progress...",
-  }));
-
-  await client.mutations.embedFiles({
-    fileKey,
-    fileName,
-    databaseId,
-    databaseFileId,
-  });
-
-  setEmbeddingProgress((prev) => ({
-    ...prev,
-    [fileName]: "Embedding completed",
-  }));
-};
-```
-
-## File Types and Support
-
-### Supported Formats
-
-- **Text Files**: `.txt`, `.md`
-- **Data Files**: `.csv`, `.json`
-- **Documents**: `.pdf`, `.doc`, `.docx`
-- **Custom**: Additional formats via configuration
-
-### File Preview
-
-- **Text-based Files**: Full content preview in modal
-- **Binary Files**: Metadata display with download option
-- **Large Files**: Efficient handling with streaming support
-
-### File Size Limits
-
-- **Individual Files**: Configurable limits based on AWS S3 settings
-- **Batch Uploads**: Multiple file support with progress tracking
-- **Storage Optimization**: Automatic compression and optimization
-
-## Error Handling
-
-### Error Types
+### Error Handling System
 
 ```typescript
 interface ErrorState {
@@ -230,77 +173,233 @@ interface ErrorState {
   type: "error" | "warning" | "info";
   timestamp: Date;
 }
+
+// Error Management
+const addError = (
+  message: string,
+  type: "error" | "warning" | "info" = "error"
+) => {
+  const error: ErrorState = {
+    message,
+    type,
+    timestamp: new Date(),
+  };
+
+  console.error(`[DatabasesPage] ${type.toUpperCase()}: ${message}`);
+  setErrors((prev) => [...prev, error]);
+
+  // Auto-remove error after 5 seconds
+  setTimeout(() => {
+    setErrors((prev) => prev.filter((e) => e.timestamp !== error.timestamp));
+  }, 5000);
+};
 ```
 
-### Error Management
+## Usage
 
-- **Auto-dismissal**: Errors automatically removed after 5 seconds
-- **User Dismissal**: Manual error removal capability
-- **Error Categorization**: Different visual styles for error types
-- **Logging**: Comprehensive console logging for debugging
+### Creating a New Database
 
-### Common Error Scenarios
+1. Navigate to `/databases`
+2. Fill in database name and description in the form panel
+3. Optionally upload files using drag & drop or file selection
+4. Click "Add Database" to create with automatic file processing
+5. Monitor embedding progress in real-time with visual indicators
 
-- **Upload Failures**: Network issues, file size limits, permission errors
-- **Database Errors**: Creation failures, update conflicts, deletion issues
-- **Embedding Failures**: Processing errors, invalid file formats, service unavailable
-- **Storage Issues**: AWS S3 connectivity, permission problems, quota exceeded
+### Managing Database Files
 
-## API Integration
-
-### Database Operations
-
-```typescript
-// Create Database
-const { data: newDatabase } = await client.models.databases.create({
-  name: formData.name.trim(),
-  description: formData.description.trim(),
-  isActive: true,
-});
-
-// Update Database
-await client.models.databases.update({
-  id: editingDatabase.id,
-  name: formData.name.trim(),
-  description: formData.description.trim(),
-});
-
-// Delete Database
-await client.models.databases.delete({ id });
-```
+1. Click on a database card to enter database detail view
+2. Use the "Add Files to Database" card to upload new files
+3. Drag and drop files directly into the upload zone
+4. Monitor embedding progress with animated indicators
+5. Use file actions (view, download, re-embed, delete) from the file cards
 
 ### File Operations
 
 ```typescript
-// Upload File
-await uploadData({
-  path: fileKey,
-  data: file,
-}).result;
+// File Upload with Progress Tracking
+const handleFileUpload = async (files: FileList): Promise<void> => {
+  setLoading(true);
+  const newFiles: UploadedFile[] = [];
 
-// Download File
-const result = await downloadData({ path: file.fileKey }).result;
-const blob = await result.body.blob();
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    try {
+      const fileKey = `databases/shared/${Date.now()}-${file.name}`;
 
-// Delete File
-await remove({ path: file.fileKey });
+      await uploadData({
+        path: fileKey,
+        data: file,
+      }).result;
+
+      const uploadedFile: UploadedFile = {
+        id: Date.now().toString() + i,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        fileKey: fileKey,
+        uploadDate: new Date(),
+      };
+
+      newFiles.push(uploadedFile);
+    } catch (error) {
+      addError(`Failed to upload ${file.name}`);
+    }
+  }
+
+  setUploadedFiles((prev) => [...prev, ...newFiles]);
+  setLoading(false);
+};
 ```
 
-### Embedding Operations
+### Vector Embedding Process
 
 ```typescript
-// Trigger Embedding
-await client.mutations.embedFiles({
-  fileKey: fileKey,
-  fileName: fileName,
-  databaseId: databaseId,
-  databaseFileId: databaseFileId,
-});
+// Comprehensive Embedding Process
+const embedFile = async (
+  fileKey: string,
+  fileName: string,
+  databaseId: string,
+  databaseFileId: string
+): Promise<void> => {
+  try {
+    setEmbeddingProgress((prev) => ({
+      ...prev,
+      [fileName]: "Embedding in progress...",
+    }));
+
+    await client.mutations.embedFiles({
+      fileKey: fileKey,
+      fileName: fileName,
+      databaseId: databaseId,
+      databaseFileId: databaseFileId,
+    });
+
+    setEmbeddingProgress((prev) => ({
+      ...prev,
+      [fileName]: "Embedding completed",
+    }));
+
+    // Auto-cleanup after 3 seconds
+    setTimeout(() => {
+      setEmbeddingProgress((prev) => {
+        const updated = { ...prev };
+        delete updated[fileName];
+        return updated;
+      });
+    }, 3000);
+  } catch (embedError) {
+    setEmbeddingProgress((prev) => ({
+      ...prev,
+      [fileName]: "Embedding failed",
+    }));
+
+    addError(`Embedding failed for ${fileName}`);
+  }
+};
 ```
 
-## Storage Organization
+### Folder Structure Management
 
-### File Paths
+```typescript
+// Hierarchical Folder Structure
+const buildFolderStructure = (
+  files: Array<{
+    path: string;
+    lastModified?: Date;
+    size?: number;
+  }>
+): FolderStructure => {
+  const root: FolderStructure = {
+    name: "databases",
+    path: "databases/",
+    files: [],
+    folders: [],
+    isExpanded: true,
+  };
+
+  const folderMap = new Map<string, FolderStructure>();
+  folderMap.set("databases/", root);
+
+  files.forEach((file) => {
+    const parts = file.path.split("/").filter(Boolean);
+    let currentPath = "";
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const parentPath = currentPath;
+      currentPath += part + "/";
+
+      if (i === parts.length - 1 && !file.path.endsWith("/")) {
+        // This is a file
+        const parentFolder = folderMap.get(parentPath + "/") || root;
+        parentFolder.files.push({
+          key: file.path,
+          lastModified: file.lastModified,
+          size: file.size,
+          name: part,
+        });
+      } else {
+        // This is a folder
+        if (!folderMap.has(currentPath)) {
+          const newFolder: FolderStructure = {
+            name: part,
+            path: currentPath,
+            files: [],
+            folders: [],
+            isExpanded: false,
+          };
+
+          const parentFolder = folderMap.get(parentPath + "/") || root;
+          parentFolder.folders.push(newFolder);
+          folderMap.set(currentPath, newFolder);
+        }
+      }
+    }
+  });
+
+  return root;
+};
+```
+
+## File Types and Support
+
+### Supported Formats
+
+- **Text Files**: `.txt`, `.md` with full content preview
+- **Data Files**: `.csv`, `.json` with structured display
+- **Documents**: `.pdf`, `.doc`, `.docx` with metadata display
+- **Custom**: Additional formats via configuration
+
+### File Preview System
+
+```typescript
+// File Content Preview
+const viewFile = async (file: UploadedFile): Promise<void> => {
+  setViewingFile(file);
+
+  const isTextFile =
+    file.type.startsWith("text/") ||
+    file.name.endsWith(".txt") ||
+    file.name.endsWith(".md") ||
+    file.name.endsWith(".json") ||
+    file.name.endsWith(".csv");
+
+  if (isTextFile) {
+    try {
+      const result = await downloadData({ path: file.fileKey }).result;
+      const text = await result.body.text();
+      setFileContent(text);
+    } catch (error) {
+      addError(`Failed to load content for ${file.name}`);
+      setFileContent(null);
+    }
+  } else {
+    setFileContent(null);
+  }
+};
+```
+
+### Storage Organization
 
 ```
 databases/
@@ -308,293 +407,113 @@ databases/
 │   ├── [timestamp]-[filename]     # General uploaded files
 │   └── [database-id]/
 │       └── [filename]             # Database-specific files
-└── [user-id]/                     # User-specific files (future)
-    └── [database-id]/
-        └── [filename]
+└── [expandable-folder-structure]  # Hierarchical organization
 ```
-
-### Folder Structure
-
-- **Hierarchical Organization**: Nested folder support
-- **Expandable Navigation**: Collapsible folder tree
-- **File Counts**: Visual indicators of folder contents
-- **Path Display**: Full path information for files
 
 ## Performance Optimization
 
 ### Loading Strategies
 
-- **Lazy Loading**: Load database files only when needed
-- **Pagination**: Handle large file lists efficiently
-- **Caching**: Cache frequently accessed data
-- **Debouncing**: Prevent excessive API calls
+- **Selective Loading**: Database files loaded only when database is selected
+- **Lazy Folder Structure**: Folder structure loaded on demand
+- **Progress Tracking**: Memory-efficient progress state management
+- **Auto-cleanup**: Automatic cleanup of completed progress tracking
 
 ### Memory Management
 
-- **File Cleanup**: Automatic cleanup of temporary files
-- **State Optimization**: Efficient state updates and cleanup
-- **Error Cleanup**: Automatic error state management
-- **Progress Tracking**: Memory-efficient progress monitoring
+```typescript
+// Automatic Progress Cleanup
+setTimeout(() => {
+  setEmbeddingProgress((prev) => {
+    const updated = { ...prev };
+    delete updated[fileName];
+    return updated;
+  });
+}, 3000); // Success cleanup
 
-### Network Optimization
+setTimeout(() => {
+  setEmbeddingProgress((prev) => {
+    const updated = { ...prev };
+    delete updated[fileName];
+    return updated;
+  });
+}, 5000); // Error cleanup
+```
 
-- **Parallel Uploads**: Multiple file uploads simultaneously
-- **Resumable Uploads**: Handle large file uploads efficiently
-- **Compression**: Automatic file compression when beneficial
-- **CDN Integration**: Optimized file delivery
+## Error Handling & Recovery
 
-## Security Features
+### Error Types and Management
 
-### File Validation
+```typescript
+// Comprehensive Error Handling
+const handleDatabaseClick = async (
+  database: Schema["databases"]["type"]
+): Promise<void> => {
+  try {
+    setSelectedDatabase(database);
+    setShowDatabaseView(true);
+    setShowFolderView(false);
+    await fetchDatabaseFiles(database.id);
+  } catch (error) {
+    console.error("[DatabasesPage] Error in handleDatabaseClick:", error);
+    addError("Failed to load database details");
+  }
+};
+```
 
-- **File Type Checking**: Validate file extensions and MIME types
-- **Size Limits**: Enforce maximum file size restrictions
-- **Content Scanning**: Basic content validation for security
-- **Path Sanitization**: Prevent directory traversal attacks
+### Visual Error Display
 
-### Access Control
-
-- **Database Permissions**: User-based database access control
-- **File Permissions**: Secure file access and modification
-- **Operation Logging**: Audit trail for all operations
-- **Error Sanitization**: Prevent information leakage in errors
-
-## Monitoring and Analytics
-
-### Operation Tracking
-
-- **Upload Metrics**: Track file upload success/failure rates
-- **Embedding Metrics**: Monitor embedding processing times
-- **Error Rates**: Track and analyze error patterns
-- **Performance Metrics**: Monitor operation response times
-
-### User Analytics
-
-- **Database Usage**: Track database creation and usage patterns
-- **File Access**: Monitor file view and download patterns
-- **Feature Usage**: Analyze most/least used features
-- **Error Analysis**: Identify common user pain points
+- **Color-coded Severity**: Red for errors, yellow for warnings, blue for info
+- **Auto-dismissal**: Errors automatically removed after 5 seconds
+- **Manual Dismissal**: X button for immediate error removal
+- **Error Stacking**: Multiple errors displayed with latest 3 visible
 
 ## Integration Points
 
-### Chat Integration
-
-- **Database Selection**: Databases available in chat interface
-- **RAG Queries**: Embedded content used for chat responses
-- **Real-time Updates**: Database changes reflected in chat
-- **Context Awareness**: Chat uses database content for responses
-
-### Backend Services
-
-- **AWS Amplify**: Database and file management
-- **AWS S3**: File storage and retrieval
-- **AWS Lambda**: Embedding processing and background tasks
-- **Vector Database**: Embedding storage and retrieval
-
-## Configuration
-
-### Environment Variables
-
-```bash
-# AWS Configuration
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-access-key
-AWS_SECRET_ACCESS_KEY=your-secret-key
-
-# File Upload Configuration
-MAX_FILE_SIZE=10MB
-SUPPORTED_FORMATS=txt,md,csv,json,pdf,doc,docx
-
-# Embedding Configuration
-EMBEDDING_MODEL=text-embedding-ada-002
-CHUNK_SIZE=1000
-CHUNK_OVERLAP=100
-```
-
-### Amplify Configuration
-
-```typescript
-// amplify/storage/resource.ts
-export const storage = defineStorage({
-  name: "databases",
-  access: (allow) => ({
-    "databases/shared/*": [allow.authenticated.to(["read", "write", "delete"])],
-    "databases/private/{entity_id}/*": [
-      allow.entity("identity").to(["read", "write", "delete"]),
-    ],
-  }),
-});
-```
-
-## Testing
-
-### Unit Tests
+### AWS Amplify Integration
 
 ```typescript
 // Database Operations
-describe("Database Operations", () => {
-  test("should create database successfully", async () => {
-    // Test database creation
-  });
+const client = generateClient<Schema>();
 
-  test("should handle file upload", async () => {
-    // Test file upload functionality
-  });
+// Storage Operations
+import { uploadData, downloadData, remove, list } from "aws-amplify/storage";
 
-  test("should process embeddings", async () => {
-    // Test embedding processing
-  });
-});
+// Real-time Updates
+const { data } = await client.models.databases.list();
 ```
 
-### Integration Tests
+### Component Integration
 
-- **Full Workflow**: Test complete database creation to file embedding
-- **Error Scenarios**: Test various error conditions and recovery
-- **Performance**: Test with large files and multiple concurrent operations
-- **Cross-component**: Test integration with chat and other components
+- **AppHeader**: Consistent header across all pages
+- **ReadmeDisplay**: Toggle-able documentation display
+- **UI Components**: Comprehensive use of shadcn/ui components
+- **Storage Integration**: Direct AWS S3 integration for file operations
 
-## Troubleshooting
+## Testing and Troubleshooting
+
+### Console Logging
+
+The component includes comprehensive logging:
+
+```typescript
+console.log("[DatabasesPage] Component initialized");
+console.log(
+  `[DatabasesPage] Successfully fetched ${data?.length || 0} databases`
+);
+console.error("[DatabasesPage] Error fetching databases:", error);
+```
 
 ### Common Issues
 
-#### Database Creation Fails
+1. **File Upload Failures**: Check AWS permissions and file size limits
+2. **Embedding Failures**: Verify AWS Lambda function deployment
+3. **Database Operations**: Confirm AWS Amplify configuration
+4. **Storage Issues**: Check AWS S3 bucket permissions and connectivity
 
-```bash
-# Check AWS permissions
-aws sts get-caller-identity
+### Debug Features
 
-# Verify Amplify configuration
-amplify status
-
-# Check console for detailed errors
-```
-
-#### File Upload Issues
-
-- **Network Problems**: Check internet connectivity and AWS region
-- **File Size**: Verify file size within limits
-- **File Type**: Ensure file type is supported
-- **Permissions**: Check AWS S3 bucket permissions
-
-#### Embedding Processing Failures
-
-- **Service Availability**: Verify AWS Lambda function is deployed
-- **File Format**: Ensure file format is supported for embedding
-- **Processing Limits**: Check for service quotas and rate limits
-- **Error Logs**: Review AWS CloudWatch logs for detailed errors
-
-#### Performance Issues
-
-- **Large Files**: Consider file size optimization
-- **Concurrent Operations**: Reduce simultaneous operations
-- **Memory Usage**: Monitor browser memory usage
-- **Network Speed**: Check connection quality
-
-### Debug Mode
-
-```typescript
-// Enable debug logging
-const DEBUG = process.env.NODE_ENV === "development";
-
-if (DEBUG) {
-  console.log("[DatabasesPage] Debug info:", {
-    databases: databases.length,
-    selectedDatabase: selectedDatabase?.name,
-    uploadedFiles: uploadedFiles.length,
-    embeddingProgress: Object.keys(embeddingProgress).length,
-  });
-}
-```
-
-## Future Enhancements
-
-### Planned Features
-
-- **Batch Operations**: Bulk file operations and database management
-- **Advanced Search**: Full-text search across database files
-- **File Versioning**: Track file changes and maintain history
-- **Collaboration**: Multi-user database sharing and permissions
-- **Import/Export**: Database backup and migration tools
-- **Advanced Analytics**: Detailed usage and performance metrics
-
-### Technical Improvements
-
-- **Streaming Uploads**: Support for very large files
-- **Progressive Web App**: Offline capabilities and better mobile support
-- **Advanced Caching**: Intelligent caching strategies
-- **Microservices**: Break down into smaller, focused services
-- **GraphQL Subscriptions**: Real-time updates for all operations
-
-## Dependencies
-
-### Core Dependencies
-
-- **Next.js**: React framework for the frontend
-- **AWS Amplify**: Backend services and authentication
-- **AWS S3**: File storage and management
-- **React**: UI library with hooks for state management
-
-### UI Dependencies
-
-- **Radix UI**: Accessible component primitives
-- **Tailwind CSS**: Utility-first CSS framework
-- **Lucide React**: Icon library
-- **Sonner**: Toast notifications
-
-### Utility Dependencies
-
-- **Date-fns**: Date manipulation utilities
-- **File-type**: File type detection
-- **Mime-types**: MIME type handling
-
-## Related Files
-
-### Backend Configuration
-
-- `amplify/data/resource.ts`: Database schema definitions
-- `amplify/storage/resource.ts`: Storage configuration
-- `amplify/functions/embed-files/`: Embedding processing function
-
-### Frontend Components
-
-- `src/components/ui/`: Reusable UI components
-- `src/lib/types.ts`: TypeScript type definitions
-- `src/hooks/`: Custom React hooks
-
-### Configuration Files
-
-- `amplify/backend.ts`: Main Amplify configuration
-- `next.config.ts`: Next.js configuration
-- `tailwind.config.ts`: Tailwind CSS configuration
-
-## Contributing
-
-### Development Setup
-
-1. Clone the repository
-2. Install dependencies: `npm install`
-3. Configure AWS Amplify: `amplify configure`
-4. Initialize Amplify: `amplify init`
-5. Deploy backend: `amplify push`
-6. Start development server: `npm run dev`
-
-### Adding New Features
-
-1. Update type definitions in `src/lib/types.ts`
-2. Implement UI components in the databases page
-3. Add backend functionality in Amplify functions
-4. Update this README with new features
-5. Add tests for new functionality
-
-### Code Style
-
-- Follow TypeScript best practices
-- Use meaningful variable and function names
-- Add comprehensive error handling
-- Include detailed logging for debugging
-- Write unit tests for new functionality
-
-## License
-
-This component is part of the AINP (AI-Native Platform) application. See the main project LICENSE file for details.
+- **Development Mode**: Enhanced logging in development environment
+- **Error Boundaries**: Graceful error handling with user feedback
+- **State Inspection**: Comprehensive state management for debugging
+- **Performance Monitoring**: Built-in performance tracking capabilities

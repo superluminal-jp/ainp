@@ -4,6 +4,14 @@ A comprehensive AI-native platform built with Next.js and AWS Amplify, featuring
 
 ## ✨ Features
 
+### 🎯 Use Case Builder
+
+- **Requirements Gathering**: Systematic business process analysis
+- **Decision Tree**: AI layer selection based on task requirements
+- **Business Flow Mapping**: Visual process optimization
+- **Strategic Planning**: Structured approach to AI implementation
+- **Best Practices**: Proven methodologies for AI adoption
+
 ### 🤖 AI Chat
 
 - **Multi-Model Support**: Claude 4 Sonnet, Amazon Nova Pro, and more
@@ -118,10 +126,18 @@ A comprehensive AI-native platform built with Next.js and AWS Amplify, featuring
 ### Getting Started
 
 1. **Sign up/Sign in** using AWS Cognito authentication
-2. **Create a System Prompt** to define your AI assistant's behavior
-3. **Upload Knowledge Base** files for RAG-powered conversations
-4. **Build Custom Tools** for specialized functions
-5. **Start Chatting** with your personalized AI assistant
+2. **Use the Use Case Builder** to define your AI implementation strategy
+3. **Create a System Prompt** to define your AI assistant's behavior
+4. **Upload Knowledge Base** files for RAG-powered conversations
+5. **Build Custom Tools** for specialized functions
+6. **Start Chatting** with your personalized AI assistant
+
+### Use Case Builder
+
+- Define business requirements systematically
+- Follow the decision tree for optimal AI layer selection
+- Map current business processes and identify improvements
+- Plan strategic AI implementation with proven methodologies
 
 ### Chat Interface
 
@@ -173,7 +189,8 @@ ainp/
 │   │   ├── databases/         # Knowledge base management
 │   │   ├── prompts/           # System prompt editor
 │   │   ├── tools/             # Custom tool builder
-│   │   └── templates/         # Template library
+│   │   ├── templates/         # Template library
+│   │   └── use-case-builder/  # Requirements gathering tool
 │   ├── components/            # React components
 │   │   ├── ui/               # Reusable UI components
 │   │   └── app-sidebar.tsx   # Main navigation
@@ -185,6 +202,23 @@ ainp/
 │   └── storage/              # S3 bucket configuration
 └── public/                    # Static assets
 ```
+
+## 📚 Documentation
+
+### Feature Documentation
+
+Each major feature has detailed documentation:
+
+- **[Chat System](src/app/chat/README.md)**: Comprehensive AI chat interface guide
+- **[System Prompts](src/app/prompts/README.md)**: Prompt engineering and management
+- **[Knowledge Bases](src/app/databases/README.md)**: File management and RAG implementation
+- **[Custom Tools](src/app/tools/README.md)**: Python Lambda function development
+
+### Getting Help
+
+- Check the feature-specific README files for detailed information
+- Review the AWS Amplify documentation for backend configuration
+- Consult the Next.js documentation for frontend development
 
 ## 🛠️ Development
 
@@ -243,3 +277,7 @@ amplify add hosting
 3. Make your changes
 4. Add tests if applicable
 5. Submit a pull request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.

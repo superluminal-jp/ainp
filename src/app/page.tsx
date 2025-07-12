@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { useSimpleHeader } from "@/components/use-page-header";
 import { AppHeader } from "@/components/app-header";
 import {
-  Brain,
   MessageCircle,
   Database,
   FileText,
@@ -194,7 +193,7 @@ export default function HomePage() {
               <Card className="border-2">
                 <CardHeader>
                   <div className="flex items-center gap-3">
-                    <Brain className="h-8 w-8 text-foreground" />
+                    <Target className="h-8 w-8 text-foreground" />
                     <div>
                       <CardTitle>Use Case Builder</CardTitle>
                       <CardDescription>

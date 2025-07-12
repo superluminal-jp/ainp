@@ -33,7 +33,7 @@ import {
   FileText,
   Layers,
   Home,
-  Brain,
+  Target,
 } from "lucide-react";
 
 // Navigation items for the sidebar
@@ -77,7 +77,7 @@ const navigationItems = [
   {
     title: "Use Case Builder",
     url: "/use-case-builder",
-    icon: Brain,
+    icon: Target,
     description: "Define and analyze AI use cases",
   },
 ];

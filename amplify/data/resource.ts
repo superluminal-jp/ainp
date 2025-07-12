@@ -66,8 +66,6 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner().to(["read", "create", "update", "delete"]),
-      allow.authenticated().to(["read"]),
-      allow.guest().to(["read"]),
     ]),
 
   databases: a
@@ -82,7 +80,6 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner().to(["read", "create", "update", "delete"]),
-      allow.authenticated().to(["read"]),
     ]),
 
   databaseFiles: a
@@ -100,7 +97,6 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner().to(["read", "create", "update", "delete"]),
-      allow.authenticated().to(["read"]),
     ]),
 
   templates: a
@@ -118,7 +114,6 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner().to(["read", "create", "update", "delete"]),
-      allow.authenticated().to(["read"]),
     ]),
 
   toolSpecs: a
@@ -137,7 +132,6 @@ const schema = a.schema({
     })
     .authorization((allow) => [
       allow.owner().to(["read", "create", "update", "delete"]),
-      allow.authenticated().to(["read"]),
     ]),
 
   // Chat query using Bedrock function
