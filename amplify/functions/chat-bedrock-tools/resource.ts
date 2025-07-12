@@ -13,7 +13,7 @@ export const chatBedrockToolsFunction = defineFunction(
     const fn = new Function(scope, "chat-bedrock-tools", {
       handler: "index.handler",
       runtime: Runtime.PYTHON_3_12,
-      timeout: Duration.seconds(60), // Increased timeout for tool execution
+      timeout: Duration.minutes(5), // Increased timeout for tool execution
       memorySize: 1024, // Increased memory for tool processing
       environment: {
         FAISS_INDEX_PREFIX: "faiss-indexes",

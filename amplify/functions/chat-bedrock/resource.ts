@@ -13,7 +13,7 @@ export const chatBedrockFunction = defineFunction(
     const fn = new Function(scope, "chat-bedrock", {
       handler: "index.handler",
       runtime: Runtime.PYTHON_3_12,
-      timeout: Duration.seconds(30),
+      timeout: Duration.minutes(5),
       memorySize: 512,
       environment: {
         FAISS_INDEX_PREFIX: "faiss-indexes",

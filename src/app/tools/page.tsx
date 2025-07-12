@@ -226,7 +226,7 @@ def handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
 **Response Format:**
 You will use structured output to return a JSON object with the tool specification. The response will be automatically formatted as JSON with the following fields:
 
-- **name**: Tool name (string)
+- **name**: Tool name in snake_case format (e.g., "generate_random_number", "validate_email_address") (string)
 - **description**: Detailed tool description (string)
 - **requirements**: Python package requirements, one per line (string)
 - **executionCode**: Complete Python Lambda function code (string)
@@ -237,6 +237,7 @@ A data validation tool that checks data integrity, formats, and constraints. Sup
 
 **Code Standards:**
 - Generate AWS Lambda-compatible Python code
+- Tool name must be in snake_case format (e.g., "generate_random_number", "validate_email_address")
 - Handler function must be named handler
 - Include proper error handling and response formatting
 - Use type hints and docstrings
@@ -362,25 +363,27 @@ Be helpful, practical, and provide actionable suggestions that users can immedia
   };
 
   const resetForm = () => {
-    setFormData({
-      name: "get_current_time",
-      description:
-        "A tool that returns the current date and time in various formats",
-      inputSchema: {
-        type: "object",
-        properties: {
-          format: {
-            type: "string",
-            description: "Time format (iso, readable, timestamp, or custom)",
+    // Only show default values if there are no tools
+    if (toolSpecs.length === 0) {
+      setFormData({
+        name: "get_current_time",
+        description:
+          "A tool that returns the current date and time in various formats",
+        inputSchema: {
+          type: "object",
+          properties: {
+            format: {
+              type: "string",
+              description: "Time format (iso, readable, timestamp, or custom)",
+            },
+            timezone: {
+              type: "string",
+              description: "Timezone (e.g., UTC, America/New_York)",
+            },
           },
-          timezone: {
-            type: "string",
-            description: "Timezone (e.g., UTC, America/New_York)",
-          },
+          required: [],
         },
-        required: [],
-      },
-      executionCode: `import json
+        executionCode: `import json
 import datetime
 from zoneinfo import ZoneInfo
 
@@ -467,9 +470,24 @@ def handler(event, context):
             },
             "body": json.dumps(error_response)
         }`,
-      requirements: "",
-      isActive: true,
-    });
+        requirements: "",
+        isActive: true,
+      });
+    } else {
+      // If there are existing tools, start with empty form
+      setFormData({
+        name: "",
+        description: "",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+        executionCode: "",
+        requirements: "",
+        isActive: true,
+      });
+    }
     setEditingTool(null);
     setIsEditing(false);
   };
@@ -874,7 +892,7 @@ def handler(event, context):
                   </Label>
                   <Textarea
                     id="requirements"
-                    placeholder="requests\npandas>=1.5.0\nnumpy\nbeautifulsoup4==4.11.1\npython-dateutil"
+                    placeholder="requests\npandas\nnumpy\nbeautifulsoup4==4.11.1\npython-dateutil"
                     value={formData.requirements}
                     onChange={(e) =>
                       setFormData((prev) => ({
