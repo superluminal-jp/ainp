@@ -24,7 +24,7 @@ export const chatBedrockToolsFunction = defineFunction(
           local: {
             tryBundle(outputDir: string) {
               execSync(
-                `python3 -m pip install -r ${path.join(functionDir, "requirements.txt")} -t ${outputDir} --platform manylinux2014_x86_64 --only-binary=:all:`
+                `pip3 install -r ${path.join(functionDir, "requirements.txt")} -t ${outputDir} --platform manylinux2014_x86_64 --only-binary=:all:`
               );
               execSync(`cp -r ${functionDir}/* ${outputDir}`);
               return true;
