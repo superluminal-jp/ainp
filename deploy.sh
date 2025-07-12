@@ -16,9 +16,7 @@ fi
 echo "📦 Installing dependencies..."
 npm ci
 
-# Install Amplify dependencies
-echo "📦 Installing Amplify dependencies..."
-cd amplify && npm ci && cd ..
+# Note: Amplify directory has no dependencies to install
 
 # Build the custom Docker image locally for testing (optional)
 echo "🐳 Building custom Docker image for testing..."
