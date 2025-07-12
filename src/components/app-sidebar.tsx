@@ -31,8 +31,9 @@ import {
   Database,
   Wrench,
   FileText,
-  Zap,
+  Layers,
   Home,
+  Brain,
 } from "lucide-react";
 
 // Navigation items for the sidebar
@@ -70,8 +71,14 @@ const navigationItems = [
   {
     title: "Templates",
     url: "/templates",
-    icon: Zap,
+    icon: Layers,
     description: "Pre-built configurations",
+  },
+  {
+    title: "Use Case Builder",
+    url: "/use-case-builder",
+    icon: Brain,
+    description: "Define and analyze AI use cases",
   },
 ];
 
@@ -144,7 +151,6 @@ export function AppSidebar() {
                       <MessageSquare className="h-3 w-3 mr-2" />
                       New Chat
                     </Button>
-
                   </div>
                 </SidebarGroupContent>
               </SidebarGroup>

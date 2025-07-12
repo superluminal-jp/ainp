@@ -61,6 +61,9 @@ import {
   Mic,
   Code,
   FileText,
+  Plus,
+  Trash2,
+  Edit,
 } from "lucide-react";
 import {
   Message,
@@ -68,6 +71,19 @@ import {
   Database as DatabaseType,
   Template,
 } from "@/lib/types";
+
+// Define types for schema properties
+type SchemaPropertyType = "string" | "number" | "boolean" | "array" | "object";
+type SchemaArrayItemType = "string" | "number" | "boolean" | "object";
+
+interface SchemaProperty {
+  id: string;
+  name: string;
+  type: SchemaPropertyType;
+  description: string;
+  required: boolean;
+  arrayItemType: SchemaArrayItemType;
+}
 
 import type { Schema } from "../../../amplify/data/resource";
 import { generateClient } from "aws-amplify/data";
@@ -127,6 +143,84 @@ export default function ChatPage() {
   },
   "required": ["answer"]
 }`);
+
+  // Schema Builder UI State
+  const [schemaProperties, setSchemaProperties] = useState<SchemaProperty[]>([
+    {
+      id: "1",
+      name: "answer",
+      type: "string",
+      description: "The main response to the user's question",
+      required: true,
+      arrayItemType: "string",
+    },
+    {
+      id: "2",
+      name: "confidence",
+      type: "number",
+      description: "Confidence level from 0 to 1",
+      required: false,
+      arrayItemType: "string",
+    },
+    {
+      id: "3",
+      name: "sources",
+      type: "array",
+      description: "List of sources used for the response",
+      required: false,
+      arrayItemType: "string",
+    },
+  ]);
+
+  const [showSchemaBuilder, setShowSchemaBuilder] = useState(false);
+
+  // Generate JSON Schema from UI properties
+  const generateJsonSchema = useCallback(() => {
+    const properties: Record<
+      string,
+      {
+        type: SchemaPropertyType;
+        description: string;
+        items?: { type: SchemaArrayItemType };
+      }
+    > = {};
+    const required: string[] = [];
+
+    schemaProperties.forEach((prop) => {
+      if (prop.name.trim()) {
+        properties[prop.name] = {
+          type: prop.type,
+          description: prop.description,
+        };
+
+        if (prop.type === "array") {
+          properties[prop.name].items = {
+            type: prop.arrayItemType,
+          };
+        }
+
+        if (prop.required) {
+          required.push(prop.name);
+        }
+      }
+    });
+
+    const schema = {
+      type: "object" as const,
+      properties,
+      ...(required.length > 0 && { required }),
+    };
+
+    return JSON.stringify(schema, null, 2);
+  }, [schemaProperties]);
+
+  // Update JSON schema when properties change
+  useEffect(() => {
+    if (useStructuredOutput) {
+      const newSchema = generateJsonSchema();
+      setStructuredOutputSchema(newSchema);
+    }
+  }, [schemaProperties, useStructuredOutput, generateJsonSchema]);
 
   // Tools are automatically enabled when tools are selected
   const useTools = useMemo(() => selectedTools.length > 0, [selectedTools]);
@@ -1395,23 +1489,210 @@ export default function ChatPage() {
                   </div>
 
                   {useStructuredOutput && (
-                    <div className="space-y-1">
-                      <Label className="text-xs font-medium text-muted-foreground">
-                        JSON Schema
-                      </Label>
-                      <Textarea
-                        value={structuredOutputSchema}
-                        onChange={(e) =>
-                          setStructuredOutputSchema(e.target.value)
-                        }
-                        placeholder="Enter JSON schema for structured output..."
-                        className="min-h-24 text-xs font-mono"
-                        rows={4}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Define the JSON schema for structured responses. The
-                        model will return responses following this format.
-                      </p>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-medium text-muted-foreground">
+                          Response Structure
+                        </Label>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setShowSchemaBuilder(!showSchemaBuilder)
+                          }
+                          className="h-6 text-xs"
+                        >
+                          <Edit className="h-3 w-3 mr-1" />
+                          {showSchemaBuilder ? "Hide Builder" : "Show Builder"}
+                        </Button>
+                      </div>
+
+                      {showSchemaBuilder && (
+                        <div className="space-y-2 p-3 border rounded-lg bg-muted/30">
+                          <div className="space-y-2">
+                            {schemaProperties.map((property, index) => (
+                              <div
+                                key={property.id}
+                                className="flex items-center gap-2 p-2 border rounded bg-background"
+                              >
+                                <div className="grid grid-cols-3 gap-2 flex-1">
+                                  <Input
+                                    placeholder="Property name"
+                                    value={property.name}
+                                    onChange={(e) => {
+                                      const newProperties = [
+                                        ...schemaProperties,
+                                      ];
+                                      newProperties[index].name =
+                                        e.target.value;
+                                      setSchemaProperties(newProperties);
+                                    }}
+                                    className="h-7 text-xs"
+                                  />
+                                  <Select
+                                    value={property.type}
+                                    onValueChange={(value) => {
+                                      const newProperties = [
+                                        ...schemaProperties,
+                                      ];
+                                      newProperties[index].type =
+                                        value as SchemaPropertyType;
+                                      setSchemaProperties(newProperties);
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-7 text-xs">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="string">
+                                        String
+                                      </SelectItem>
+                                      <SelectItem value="number">
+                                        Number
+                                      </SelectItem>
+                                      <SelectItem value="boolean">
+                                        Boolean
+                                      </SelectItem>
+                                      <SelectItem value="array">
+                                        Array
+                                      </SelectItem>
+                                      <SelectItem value="object">
+                                        Object
+                                      </SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  {property.type === "array" && (
+                                    <Select
+                                      value={property.arrayItemType}
+                                      onValueChange={(value) => {
+                                        const newProperties = [
+                                          ...schemaProperties,
+                                        ];
+                                        newProperties[index].arrayItemType =
+                                          value as SchemaArrayItemType;
+                                        setSchemaProperties(newProperties);
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-7 text-xs">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="string">
+                                          String items
+                                        </SelectItem>
+                                        <SelectItem value="number">
+                                          Number items
+                                        </SelectItem>
+                                        <SelectItem value="boolean">
+                                          Boolean items
+                                        </SelectItem>
+                                        <SelectItem value="object">
+                                          Object items
+                                        </SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  )}
+                                  {property.type !== "array" && (
+                                    <div className="flex items-center space-x-2">
+                                      <input
+                                        type="checkbox"
+                                        checked={property.required}
+                                        onChange={(e) => {
+                                          const newProperties = [
+                                            ...schemaProperties,
+                                          ];
+                                          newProperties[index].required =
+                                            e.target.checked;
+                                          setSchemaProperties(newProperties);
+                                        }}
+                                        className="rounded border-border scale-75"
+                                      />
+                                      <Label className="text-xs">
+                                        Required
+                                      </Label>
+                                    </div>
+                                  )}
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => {
+                                    const newProperties =
+                                      schemaProperties.filter(
+                                        (_, i) => i !== index
+                                      );
+                                    setSchemaProperties(newProperties);
+                                  }}
+                                  className="h-7 w-7"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-2">
+                            {schemaProperties.map((property, index) => (
+                              <Input
+                                key={property.id}
+                                placeholder={`Description for ${property.name || "property"}`}
+                                value={property.description}
+                                onChange={(e) => {
+                                  const newProperties = [...schemaProperties];
+                                  newProperties[index].description =
+                                    e.target.value;
+                                  setSchemaProperties(newProperties);
+                                }}
+                                className="h-7 text-xs"
+                              />
+                            ))}
+                          </div>
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const newProperty: SchemaProperty = {
+                                id: Date.now().toString(),
+                                name: "",
+                                type: "string",
+                                description: "",
+                                required: false,
+                                arrayItemType: "string",
+                              };
+                              setSchemaProperties([
+                                ...schemaProperties,
+                                newProperty,
+                              ]);
+                            }}
+                            className="h-7 text-xs"
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            Add Property
+                          </Button>
+                        </div>
+                      )}
+
+                      <div className="space-y-1">
+                        <Label className="text-xs font-medium text-muted-foreground">
+                          Generated JSON Schema
+                        </Label>
+                        <Textarea
+                          value={structuredOutputSchema}
+                          onChange={(e) =>
+                            setStructuredOutputSchema(e.target.value)
+                          }
+                          placeholder="Generated JSON schema..."
+                          className="min-h-24 text-xs font-mono"
+                          rows={4}
+                          readOnly={showSchemaBuilder}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          {showSchemaBuilder
+                            ? "This schema is automatically generated from the builder above."
+                            : "You can edit this schema directly or use the visual builder above."}
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>
