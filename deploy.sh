@@ -18,8 +18,8 @@ npm ci
 
 # Note: Amplify directory has no dependencies to install
 
-# Using AWS CodeBuild image with Docker support
-echo "🐳 Using AWS CodeBuild image with Docker support for deployment..."
+# Using local bundling approach (no Docker required)
+echo "📦 Using local bundling approach for Python dependencies..."
 
 # Deploy to Amplify
 echo "🚀 Deploying to Amplify..."
