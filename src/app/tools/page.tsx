@@ -80,122 +80,14 @@ export default function ToolsPage() {
     Schema["toolSpecs"]["type"] | null
   >(null);
   const [formData, setFormData] = useState<ToolSpec>({
-    name: "get_current_time",
-    description:
-      "A comprehensive time utility tool that retrieves the current date and time in multiple formats with timezone support. This tool can return time in ISO format for standardized timestamps, human-readable format for display purposes, Unix timestamp for system operations, or custom formatted strings for specific use cases. It supports timezone conversion using standard timezone identifiers (e.g., America/New_York, Europe/London, Asia/Tokyo) and automatically handles daylight saving time transitions. The tool is particularly useful for logging, scheduling, user interfaces, and any application requiring accurate time information across different geographical locations.",
+    name: "",
+    description: "",
     inputSchema: {
       type: "object",
-      properties: {
-        format: {
-          type: "string",
-          description: "Time format (iso, readable, timestamp, or custom)",
-        },
-        timezone: {
-          type: "string",
-          description: "Timezone (e.g., UTC, America/New_York)",
-        },
-      },
+      properties: {},
       required: [],
     },
-    executionCode: `import json
-from datetime import datetime, timezone
-from typing import Any, Dict, Literal
-from zoneinfo import ZoneInfo
-
-# ---------------------------------------------------------------------------
-# Typing helpers
-# ---------------------------------------------------------------------------
-
-TimeFormat = Literal["iso", "readable", "timestamp", "custom"]
-DEFAULT_TIMEZONE = "UTC"
-
-
-# ---------------------------------------------------------------------------
-# Utility functions
-# ---------------------------------------------------------------------------
-
-def _format_time(dt: datetime, fmt: TimeFormat) -> str:
-    """Return *dt* formatted according to *fmt*."""
-
-    return {
-        "iso": dt.isoformat(),
-        "readable": dt.strftime("%Y-%m-%d %H:%M:%S %Z"),
-        "timestamp": str(int(dt.timestamp())),
-        "custom": dt.strftime("%B %d, %Y at %I:%M %p %Z"),
-    }.get(fmt, dt.isoformat())
-
-
-def _build_response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
-    """Construct an AWS Lambda proxy integration response."""
-
-    return {
-        "statusCode": status_code,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-        },
-        "body": json.dumps(body, default=str),
-    }
-
-
-# ---------------------------------------------------------------------------
-# Lambda entry point
-# ---------------------------------------------------------------------------
-
-def handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
-    """AWS Lambda entry point returning the current time in various formats.
-
-    The *event* payload may include::
-
-        {
-            "tool_input": {
-                "format": "iso|readable|timestamp|custom",
-                "timezone": "Area/City"
-            }
-        }
-    """
-
-    try:
-        tool_input = (event or {}).get("tool_input", {})
-
-        fmt: TimeFormat = tool_input.get("format", "iso")  # type: ignore[assignment]
-        tz_name: str = tool_input.get("timezone", DEFAULT_TIMEZONE)
-
-        # Obtain current UTC time (timezone aware)
-        utc_now = datetime.now(timezone.utc)
-
-        # Resolve requested timezone, falling back to UTC on failure
-        try:
-            tz = ZoneInfo(tz_name)
-        except Exception:
-            tz = timezone.utc
-            tz_name = f"UTC (invalid timezone: {tz_name})"
-
-        current_time = utc_now.astimezone(tz)
-        formatted_time = _format_time(current_time, fmt)  # type: ignore[arg-type]
-
-        body = {
-            "success": True,
-            "message": "Current time retrieved successfully",
-            "data": {
-                "current_time": formatted_time,
-                "timezone": tz_name,
-                "format": fmt,
-                "utc_time": utc_now.isoformat(),
-                "unix_timestamp": int(current_time.timestamp()),
-                "request_id": getattr(context, "aws_request_id", "local-test"),
-            },
-        }
-        return _build_response(200, body)
-
-    except Exception as exc:  # pylint: disable=broad-except
-        error_body = {
-            "success": False,
-            "message": f"Error getting current time: {exc}",
-            "error_type": type(exc).__name__,
-        }
-        return _build_response(500, error_body)
-`,
+    executionCode: "",
     requirements: "",
     isActive: true,
   });
@@ -232,8 +124,25 @@ You will use structured output to return a JSON object with the tool specificati
 - **executionCode**: Complete Python Lambda function code (string)
 - **inputSchema**: JSON schema object with type, properties, and required fields
 
-**Example Tool Concept:**
-A data validation tool that checks data integrity, formats, and constraints. Supports validation of JSON objects, arrays, strings, numbers, and custom business rules. Includes detailed error reporting and flexible validation schemas.
+**Example Response:**
+When a user asks "Create a simple greeting tool", you would return:
+
+{
+  "name": "hello_world",
+  "description": "A simple tool that returns a personalized greeting message",
+  "requirements": "",
+  "executionCode": "import json\\n\\ndef handler(event, context):\\n    \\"\\"\\"\\n    Simple hello world tool\\n    \\"\\"\\"\\n    try:\\n        # Get the input parameters\\n        tool_input = event.get('tool_input', {})\\n        name = tool_input.get('name', 'World')\\n        \\n        # Create the greeting\\n        greeting = f\\"Hello, {name}!\\"\\n        \\n        # Return success response\\n        return {\\n            \\"statusCode\\": 200,\\n            \\"headers\\": {\\n                \\"Content-Type\\": \\"application/json\\",\\n                \\"Access-Control-Allow-Origin\\": \\"*\\"\\n            },\\n            \\"body\\": json.dumps({\\n                \\"success\\": True,\\n                \\"message\\": \\"Greeting created successfully\\",\\n                \\"data\\": {\\n                    \\"greeting\\": greeting,\\n                    \\"name\\": name\\n                }\\n            })\\n        }\\n        \\n    except Exception as e:\\n        # Return error response\\n        return {\\n            \\"statusCode\\": 500,\\n            \\"headers\\": {\\n                \\"Content-Type\\": \\"application/json\\",\\n                \\"Access-Control-Allow-Origin\\": \\"*\\"\\n            },\\n            \\"body\\": json.dumps({\\n                \\"success\\": False,\\n                \\"message\\": f\\"Error: {str(e)}\\"\\n            })\\n        }",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "The name to greet"
+      }
+    },
+    "required": ["name"]
+  }
+}
 
 **Code Standards:**
 - Generate AWS Lambda-compatible Python code
@@ -266,6 +175,72 @@ Be helpful, practical, and provide actionable suggestions that users can immedia
 
     return () => sub.unsubscribe();
   }, []);
+
+  // Initialize form with default values only when there are no tools
+  useEffect(() => {
+    if (toolSpecs.length === 0 && !isEditing) {
+      setFormData({
+        name: "hello_world",
+        description: "A simple tool that returns a greeting message",
+        inputSchema: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "The name to greet",
+            },
+          },
+          required: ["name"],
+        },
+        executionCode: `import json
+
+def handler(event, context):
+    """
+    Simple hello world tool
+    """
+    try:
+        # Get the input parameters
+        tool_input = event.get('tool_input', {})
+        name = tool_input.get('name', 'World')
+        
+        # Create the greeting
+        greeting = f"Hello, {name}!"
+        
+        # Return success response
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+            },
+            "body": json.dumps({
+                "success": True,
+                "message": "Greeting created successfully",
+                "data": {
+                    "greeting": greeting,
+                    "name": name
+                }
+            })
+        }
+        
+    except Exception as e:
+        # Return error response
+        return {
+            "statusCode": 500,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+            },
+            "body": json.dumps({
+                "success": False,
+                "message": f"Error: {str(e)}"
+            })
+        }`,
+        requirements: "",
+        isActive: true,
+      });
+    }
+  }, [toolSpecs.length, isEditing]);
 
   const handleAddTool = async () => {
     console.log("handleAddTool", formData);
@@ -366,109 +341,61 @@ Be helpful, practical, and provide actionable suggestions that users can immedia
     // Only show default values if there are no tools
     if (toolSpecs.length === 0) {
       setFormData({
-        name: "get_current_time",
-        description:
-          "A tool that returns the current date and time in various formats",
+        name: "hello_world",
+        description: "A simple tool that returns a greeting message",
         inputSchema: {
           type: "object",
           properties: {
-            format: {
+            name: {
               type: "string",
-              description: "Time format (iso, readable, timestamp, or custom)",
-            },
-            timezone: {
-              type: "string",
-              description: "Timezone (e.g., UTC, America/New_York)",
+              description: "The name to greet",
             },
           },
-          required: [],
+          required: ["name"],
         },
         executionCode: `import json
-import datetime
-from zoneinfo import ZoneInfo
 
 def handler(event, context):
     """
-    AWS Lambda function to get current time in various formats
-    
-    Args:
-        event: Contains the tool input parameters
-        context: Lambda runtime information
-    
-    Returns:
-        dict: Response with statusCode, body containing the result
+    Simple hello world tool
     """
     try:
-        # Extract tool input from event
+        # Get the input parameters
         tool_input = event.get('tool_input', {})
+        name = tool_input.get('name', 'World')
         
-        format_type = tool_input.get("format", "iso")
-        timezone_name = tool_input.get("timezone", "UTC")
+        # Create the greeting
+        greeting = f"Hello, {name}!"
         
-        # Get current time in UTC
-        utc_now = datetime.datetime.now(datetime.timezone.utc)
-        
-        # Apply timezone if specified
-        if timezone_name and timezone_name != "UTC":
-            try:
-                tz = ZoneInfo(timezone_name)
-                current_time = utc_now.astimezone(tz)
-            except Exception:
-                current_time = utc_now
-                timezone_name = "UTC (invalid timezone specified)"
-        else:
-            current_time = utc_now
-        
-        # Format the time based on user preference
-        if format_type == "iso":
-            formatted_time = current_time.isoformat()
-        elif format_type == "readable":
-            formatted_time = current_time.strftime("%Y-%m-%d %H:%M:%S %Z")
-        elif format_type == "timestamp":
-            formatted_time = str(int(current_time.timestamp()))
-        elif format_type == "custom":
-            formatted_time = current_time.strftime("%B %d, %Y at %I:%M %p %Z")
-        else:
-            formatted_time = current_time.isoformat()
-        
-        # Success response
-        response_body = {
-            "success": True,
-            "message": "Current time retrieved successfully",
-            "data": {
-                "current_time": formatted_time,
-                "timezone": timezone_name,
-                "format": format_type,
-                "utc_time": utc_now.isoformat(),
-                "unix_timestamp": int(current_time.timestamp()),
-                "request_id": context.aws_request_id if context else "local-test"
-            }
-        }
-        
+        # Return success response
         return {
             "statusCode": 200,
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Origin": "*"
             },
-            "body": json.dumps(response_body)
+            "body": json.dumps({
+                "success": True,
+                "message": "Greeting created successfully",
+                "data": {
+                    "greeting": greeting,
+                    "name": name
+                }
+            })
         }
         
     except Exception as e:
-        # Error response
-        error_response = {
-            "success": False,
-            "message": f"Error getting current time: {str(e)}",
-            "error_type": type(e).__name__
-        }
-        
+        # Return error response
         return {
             "statusCode": 500,
             "headers": {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Origin": "*"
             },
-            "body": json.dumps(error_response)
+            "body": json.dumps({
+                "success": False,
+                "message": f"Error: {str(e)}"
+            })
         }`,
         requirements: "",
         isActive: true,
@@ -727,7 +654,7 @@ def handler(event, context):
                   </Label>
                   <Input
                     id="name"
-                    placeholder="e.g., weather_check, calculator"
+                    placeholder="e.g., hello_world, simple_calculator"
                     value={formData.name}
                     onChange={(e) =>
                       setFormData((prev) => ({
@@ -745,7 +672,7 @@ def handler(event, context):
                   </Label>
                   <Textarea
                     id="description"
-                    placeholder="Describe what this tool does..."
+                    placeholder="A simple tool that..."
                     value={formData.description}
                     onChange={(e) =>
                       setFormData((prev) => ({
@@ -766,7 +693,7 @@ def handler(event, context):
                     <div className="space-y-1">
                       <Label className="text-xs">Property</Label>
                       <Input
-                        placeholder="param_name"
+                        placeholder="name"
                         value={newProperty.name}
                         onChange={(e) =>
                           setNewProperty((prev) => ({
@@ -799,7 +726,7 @@ def handler(event, context):
                     <div className="col-span-2 space-y-1">
                       <Label className="text-xs">Description</Label>
                       <Input
-                        placeholder="Parameter description"
+                        placeholder="The name to greet"
                         value={newProperty.description}
                         onChange={(e) =>
                           setNewProperty((prev) => ({
@@ -892,7 +819,13 @@ def handler(event, context):
                   </Label>
                   <Textarea
                     id="requirements"
-                    placeholder="requests\npandas\nnumpy\nbeautifulsoup4==4.11.1\npython-dateutil"
+                    placeholder={`# No external packages needed for simple tools
+# Example packages:
+# requests
+# pandas
+# numpy
+# beautifulsoup4==4.11.1
+# python-dateutil`}
                     value={formData.requirements}
                     onChange={(e) =>
                       setFormData((prev) => ({
@@ -918,36 +851,41 @@ def handler(event, context):
 
 def handler(event, context):
     """
-    AWS Lambda function handler
-    
-    Args:
-        event: Contains the tool input parameters
-        context: Lambda runtime information
-    
-    Returns:
-        dict: Response with statusCode and body
+    Simple hello world tool
     """
     try:
+        # Get the input parameters
         tool_input = event.get('tool_input', {})
-        param1 = tool_input.get("param1", "")
-        param2 = tool_input.get("param2", 0)
+        name = tool_input.get('name', 'World')
         
-        # Your tool logic here
-        result_data = {"processed": True, "param1": param1, "param2": param2}
+        # Create the greeting
+        greeting = f"Hello, {name}!"
         
+        # Return success response
         return {
             "statusCode": 200,
-            "headers": {"Content-Type": "application/json"},
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+            },
             "body": json.dumps({
                 "success": True,
-                "message": f"Processed {param1} with value {param2}",
-                "data": result_data
+                "message": "Greeting created successfully",
+                "data": {
+                    "greeting": greeting,
+                    "name": name
+                }
             })
         }
+        
     except Exception as e:
+        # Return error response
         return {
             "statusCode": 500,
-            "headers": {"Content-Type": "application/json"},
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+            },
             "body": json.dumps({
                 "success": False,
                 "message": f"Error: {str(e)}"
