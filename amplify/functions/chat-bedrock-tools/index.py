@@ -423,13 +423,15 @@ def build_converse_params(
     }
 
     if response_format:
-        params["inferenceConfig"]["responseFormat"] = response_format
+        inference_config = params["inferenceConfig"]
+        if isinstance(inference_config, dict):
+            inference_config["responseFormat"] = response_format  # type: ignore
 
     if system_prompt.strip():
         params["system"] = [{"text": system_prompt}]
 
     if tools:
-        params["toolConfig"] = {"tools": tools}
+        params["toolConfig"] = {"tools": tools}  # type: ignore
 
     return params
 
