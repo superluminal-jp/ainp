@@ -18,23 +18,23 @@ const backend = defineBackend({
   chatBedrockToolsFunction,
 });
  
-Grant the embed-files function access to the storage bucket
+// Grant the embed-files function access to the storage bucket
 backend.storage.resources.bucket.grantReadWrite(
   backend.embedFilesFunction.resources.lambda
 );
 
-Grant the chat-bedrock function access to the storage bucket (read-only for FAISS indexes)
+// Grant the chat-bedrock function access to the storage bucket (read-only for FAISS indexes)
 backend.storage.resources.bucket.grantRead(
   backend.chatBedrockFunction.resources.lambda
 );
 
-Add bucket name to embed-files function environment
+// Add bucket name to embed-files function environment
 backend.embedFilesFunction.addEnvironment(
   "STORAGE_BUCKET_NAME",
   backend.storage.resources.bucket.bucketName
 );
 
-Add bucket name to chat-bedrock function environment
+// Add bucket name to chat-bedrock function environment
 backend.chatBedrockFunction.addEnvironment(
   "STORAGE_BUCKET_NAME",
   backend.storage.resources.bucket.bucketName

@@ -1,0 +1,30 @@
+# Use the official Amplify build image as base
+FROM public.ecr.aws/aws-amplify/amplify:al2-v4.0.0
+
+# Install Docker
+RUN yum update -y && \
+    yum install -y docker && \
+    yum clean all
+
+# Install Node.js 18 (required for Amplify Gen 2)
+RUN curl -fsSL https://rpm.nodesource.com/setup_18.x | bash - && \
+    yum install -y nodejs
+
+# Ensure Docker can be used
+RUN usermod -aG docker root
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files for dependency caching
+COPY package*.json ./
+COPY amplify/package*.json ./amplify/
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy application code
+COPY . .
+
+# Default command
+CMD ["bash"] 

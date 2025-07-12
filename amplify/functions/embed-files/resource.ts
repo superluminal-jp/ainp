@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineFunction } from "@aws-amplify/backend";
-import { Duration, DockerImage } from "aws-cdk-lib";
+import { Duration } from "aws-cdk-lib";
 import { Code, Function, Runtime } from "aws-cdk-lib/aws-lambda";
 import { PolicyStatement, Effect } from "aws-cdk-lib/aws-iam";
 
@@ -17,19 +17,9 @@ export const embedFilesFunction = defineFunction(
       environment: {
         FAISS_INDEX_PREFIX: "faiss-indexes",
       },
-      code: Code.fromAsset(functionDir, {
-        bundling: {
-          image: DockerImage.fromRegistry("python:3.12-slim"),
-          command: [
-            "bash",
-            "-c",
-            [
-              "cp -r /asset-input/* /asset-output/",
-              "cd /asset-output",
-              "python3 -m pip install -r requirements.txt --target . --no-cache-dir",
-            ].join(" && "),
-          ],
-        },
+      code: Code.fromDockerBuild(functionDir, {
+        file: "Dockerfile",
+        platform: "linux/amd64",
       }),
     });
 
