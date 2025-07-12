@@ -8,6 +8,7 @@ import numpy as np
 import faiss
 from typing import List, Dict, Optional, Any, Tuple
 from datetime import datetime
+from boto3.dynamodb.conditions import Attr
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -23,7 +24,7 @@ EMBEDDING_MODEL_ID = "amazon.titan-embed-text-v1"
 EMBEDDING_DIMENSION = 1536
 FALLBACK_MODEL_ID = "apac.anthropic.claude-sonnet-4-20250514-v1:0"
 
-toolspecs_table = dynamodb.Table(TOOLSPECS_TABLE_NAME) if TOOLSPECS_TABLE_NAME else None
+toolspecs_table = dynamodb.Table(TOOLSPECS_TABLE_NAME) if TOOLSPECS_TABLE_NAME else None  # type: ignore
 
 
 def get_embeddings(texts: List[str]) -> List[List[float]]:
@@ -190,9 +191,7 @@ def load_tools_from_dynamodb(selected_tool_ids=None):
         return get_fallback_tools()
 
     try:
-        response = toolspecs_table.scan(
-            FilterExpression=boto3.dynamodb.conditions.Attr("isActive").eq(True)
-        )
+        response = toolspecs_table.scan(FilterExpression=Attr("isActive").eq(True))
 
         tools = []
         for item in response.get("Items", []):
@@ -234,8 +233,7 @@ def get_tool_execution_code(tool_name: str) -> Optional[str]:
 
     try:
         response = toolspecs_table.scan(
-            FilterExpression=boto3.dynamodb.conditions.Attr("name").eq(tool_name)
-            & boto3.dynamodb.conditions.Attr("isActive").eq(True)
+            FilterExpression=Attr("name").eq(tool_name) & Attr("isActive").eq(True)
         )
         items = response.get("Items", [])
         return items[0].get("executionCode") if items else None
@@ -250,8 +248,7 @@ def install_tool_requirements(tool_name: str) -> bool:
             return True
 
         response = toolspecs_table.scan(
-            FilterExpression=boto3.dynamodb.conditions.Attr("name").eq(tool_name)
-            & boto3.dynamodb.conditions.Attr("isActive").eq(True)
+            FilterExpression=Attr("name").eq(tool_name) & Attr("isActive").eq(True)
         )
 
         items = response.get("Items", [])

@@ -5,6 +5,7 @@ import { storage } from "./storage/resource";
 import { chatBedrockFunction } from "./functions/chat-bedrock/resource";
 import { embedFilesFunction } from "./functions/embed-files/resource";
 import { chatBedrockToolsFunction } from "./functions/chat-bedrock-tools/resource";
+import { testToolFunction } from "./functions/test-tool/resource";
 
 /**
  * @see https://docs.amplify.aws/react/build-a-backend/ to add storage, functions, and more
@@ -16,6 +17,7 @@ const backend = defineBackend({
   chatBedrockFunction,
   embedFilesFunction,
   chatBedrockToolsFunction,
+  testToolFunction,
 });
  
 // Grant the embed-files function access to the storage bucket
@@ -58,6 +60,17 @@ backend.data.resources.tables["toolSpecs"].grantReadWriteData(
 
 // Add DynamoDB table name to chat-bedrock-tools function environment
 backend.chatBedrockToolsFunction.addEnvironment(
+  "TOOLSPECS_TABLE_NAME",
+  backend.data.resources.tables["toolSpecs"].tableName
+);
+
+// Grant the test-tool function access to the DynamoDB tables
+backend.data.resources.tables["toolSpecs"].grantReadData(
+  backend.testToolFunction.resources.lambda
+);
+
+// Add DynamoDB table name to test-tool function environment
+backend.testToolFunction.addEnvironment(
   "TOOLSPECS_TABLE_NAME",
   backend.data.resources.tables["toolSpecs"].tableName
 );

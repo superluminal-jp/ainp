@@ -15,6 +15,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { useState, useEffect } from "react";
 import { useSimpleHeader } from "@/components/use-page-header";
 import { AppHeader } from "@/components/app-header";
@@ -29,6 +36,10 @@ import {
   Check,
   Code,
   FileText,
+  Play,
+  Clock,
+  AlertCircle,
+  CheckCircle,
 } from "lucide-react";
 
 import type { Schema } from "../../../amplify/data/resource";
@@ -37,6 +48,30 @@ import { toast } from "sonner";
 import type { ToolSuggestion } from "@/lib/types";
 
 const client = generateClient<Schema>();
+
+// Type definitions for testing
+type ToolInputValue =
+  | string
+  | number
+  | boolean
+  | unknown[]
+  | Record<string, unknown>;
+
+interface TestResultData {
+  success: boolean;
+  message?: string;
+  data?: Record<string, unknown>;
+  error?: string;
+  error_type?: string;
+  validation_errors?: Record<string, unknown>;
+  input_used?: Record<string, unknown>;
+  request_id?: string;
+  execution_time_ms?: number;
+}
+
+interface TestToolResult {
+  data: TestResultData;
+}
 
 /**
  * Interface for tool input schema property
@@ -104,6 +139,17 @@ export default function ToolsPage() {
 
   // UI state
   const [showReadme, setShowReadme] = useState(false);
+
+  // Testing state
+  const [testingTool, setTestingTool] = useState<
+    Schema["toolSpecs"]["type"] | null
+  >(null);
+  const [testInput, setTestInput] = useState<Record<string, ToolInputValue>>(
+    {}
+  );
+  const [testResult, setTestResult] = useState<TestToolResult | null>(null);
+  const [isTestingLoading, setIsTestingLoading] = useState(false);
+  const [showTestDialog, setShowTestDialog] = useState(false);
 
   // AI Assistant system prompt
   const TOOLS_ASSISTANT_PROMPT = `You are an expert AI assistant specialized in helping users create custom tools with Python Lambda functions. Your role is to:
@@ -611,6 +657,289 @@ def handler(event, context):
     });
   };
 
+  const handleTestTool = (tool: Schema["toolSpecs"]["type"]) => {
+    setTestingTool(tool);
+    setTestInput({});
+    setTestResult(null);
+    setShowTestDialog(true);
+  };
+
+  const executeTest = async () => {
+    if (!testingTool) return;
+
+    setIsTestingLoading(true);
+    setTestResult(null);
+
+    try {
+      console.log("🔍 Testing tool:", testingTool);
+      console.log("🔍 Test input:", testInput);
+
+      // Ensure testInput is a plain object that can be serialized to JSON
+      const cleanInput = JSON.parse(JSON.stringify(testInput));
+      console.log("🔍 Clean input:", cleanInput);
+
+      const response = await client.queries.testTool({
+        toolId: testingTool.id,
+        toolInput: JSON.stringify(cleanInput),
+      });
+      console.log("🔍 Test tool response:", response);
+
+      setTestResult(response as TestToolResult);
+    } catch (error) {
+      console.error("Error testing tool:", error);
+      setTestResult({
+        data: {
+          success: false,
+          error: `Failed to test tool: ${error}`,
+          error_type: "client_error",
+        },
+      });
+    } finally {
+      setIsTestingLoading(false);
+    }
+  };
+
+  const generateTestInputForm = () => {
+    if (!testingTool) return null;
+
+    const schema =
+      typeof testingTool.inputSchema === "string"
+        ? JSON.parse(testingTool.inputSchema)
+        : (testingTool.inputSchema as InputSchema);
+
+    return (
+      <div className="space-y-4">
+        <div className="text-sm text-muted-foreground">
+          Fill in the input parameters to test the tool:
+        </div>
+
+        {Object.entries(schema.properties || {}).map(([name, prop]) => {
+          const property = prop as SchemaProperty;
+          const isRequired = schema.required?.includes(name);
+
+          return (
+            <div key={name} className="space-y-2">
+              <Label className="text-sm font-medium">
+                {name}
+                {isRequired && <span className="text-red-500 ml-1">*</span>}
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                {property.description}
+              </p>
+
+              {property.type === "string" && (
+                <Input
+                  value={
+                    typeof testInput[name] === "string"
+                      ? (testInput[name] as string)
+                      : ""
+                  }
+                  onChange={(e) =>
+                    setTestInput((prev) => ({
+                      ...prev,
+                      [name]: e.target.value,
+                    }))
+                  }
+                  placeholder={`Enter ${name}`}
+                  className="text-sm"
+                />
+              )}
+
+              {property.type === "number" && (
+                <Input
+                  type="number"
+                  value={
+                    typeof testInput[name] === "number"
+                      ? (testInput[name] as number)
+                      : ""
+                  }
+                  onChange={(e) =>
+                    setTestInput((prev) => ({
+                      ...prev,
+                      [name]: e.target.value ? Number(e.target.value) : 0,
+                    }))
+                  }
+                  placeholder={`Enter ${name}`}
+                  className="text-sm"
+                />
+              )}
+
+              {property.type === "boolean" && (
+                <Select
+                  value={
+                    typeof testInput[name] === "boolean"
+                      ? testInput[name].toString()
+                      : ""
+                  }
+                  onValueChange={(value) =>
+                    setTestInput((prev) => ({
+                      ...prev,
+                      [name]: value === "true",
+                    }))
+                  }
+                >
+                  <SelectTrigger className="text-sm">
+                    <SelectValue placeholder={`Select ${name}`} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">True</SelectItem>
+                    <SelectItem value="false">False</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+
+              {property.type === "array" && (
+                <Textarea
+                  value={testInput[name] ? JSON.stringify(testInput[name]) : ""}
+                  onChange={(e) => {
+                    try {
+                      const parsed = JSON.parse(e.target.value);
+                      setTestInput((prev) => ({ ...prev, [name]: parsed }));
+                    } catch {
+                      setTestInput((prev) => ({
+                        ...prev,
+                        [name]: e.target.value,
+                      }));
+                    }
+                  }}
+                  placeholder={`Enter ${name} as JSON array`}
+                  className="text-sm font-mono"
+                  rows={3}
+                />
+              )}
+
+              {property.type === "object" && (
+                <Textarea
+                  value={
+                    testInput[name]
+                      ? JSON.stringify(testInput[name], null, 2)
+                      : ""
+                  }
+                  onChange={(e) => {
+                    try {
+                      const parsed = JSON.parse(e.target.value);
+                      setTestInput((prev) => ({ ...prev, [name]: parsed }));
+                    } catch {
+                      setTestInput((prev) => ({
+                        ...prev,
+                        [name]: e.target.value,
+                      }));
+                    }
+                  }}
+                  placeholder={`Enter ${name} as JSON object`}
+                  className="text-sm font-mono"
+                  rows={4}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const formatJsonValue = (value: unknown): string => {
+    if (value === null || value === undefined) {
+      return String(value);
+    }
+
+    // If it's already a string, try to parse it as JSON
+    if (typeof value === "string") {
+      try {
+        const parsed = JSON.parse(value);
+        return JSON.stringify(parsed, null, 2);
+      } catch {
+        // If parsing fails, return as-is
+        return value;
+      }
+    }
+
+    // If it's an object, stringify it with formatting
+    if (typeof value === "object") {
+      return JSON.stringify(value, null, 2);
+    }
+
+    // For primitive values, return as string
+    return String(value);
+  };
+
+  const renderTestResult = () => {
+    if (!testResult) return null;
+
+    const result = (testResult as TestToolResult)?.data;
+    const isSuccess = result?.success;
+
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          {isSuccess ? (
+            <CheckCircle className="h-4 w-4 text-green-500" />
+          ) : (
+            <AlertCircle className="h-4 w-4 text-red-500" />
+          )}
+          <span
+            className={`text-sm font-medium ${isSuccess ? "text-green-700" : "text-red-700"}`}
+          >
+            {isSuccess ? "Test Passed" : "Test Failed"}
+          </span>
+          {result?.execution_time_ms && (
+            <Badge variant="outline" className="ml-auto">
+              <Clock className="h-3 w-3 mr-1" />
+              {result.execution_time_ms}ms
+            </Badge>
+          )}
+        </div>
+
+        {result?.error && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+            <p className="text-sm font-medium text-red-800">Error:</p>
+            <p className="text-sm text-red-700">{String(result.error)}</p>
+            {result.error_type && (
+              <p className="text-xs text-red-600 mt-1">
+                Type: {String(result.error_type)}
+              </p>
+            )}
+          </div>
+        )}
+
+        {result?.validation_errors && (
+          <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+            <p className="text-sm font-medium text-yellow-800">
+              Validation Errors:
+            </p>
+            <pre className="text-sm text-yellow-700 mt-1">
+              {formatJsonValue(result.validation_errors) as string}
+            </pre>
+          </div>
+        )}
+
+        {result?.data && (
+          <div className="p-3 bg-gray-50 border border-gray-200 rounded-md">
+            <p className="text-sm font-medium text-gray-800">Result:</p>
+            <pre className="text-sm text-gray-700 mt-1 max-h-64 overflow-auto">
+              {formatJsonValue(result.data) as string}
+            </pre>
+          </div>
+        )}
+
+        {result?.input_used && (
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+            <p className="text-sm font-medium text-blue-800">Input Used:</p>
+            <pre className="text-sm text-blue-700 mt-1">
+              {formatJsonValue(result.input_used) as string}
+            </pre>
+          </div>
+        )}
+
+        {result?.request_id && (
+          <p className="text-xs text-muted-foreground">
+            Request ID: {String(result.request_id)}
+          </p>
+        )}
+      </div>
+    );
+  };
+
   return (
     <>
       <AppHeader />
@@ -1074,6 +1403,16 @@ def handler(event, context):
                             <Button
                               size="sm"
                               variant="ghost"
+                              onClick={() => handleTestTool(tool)}
+                              className="h-6 w-6 p-0 text-blue-600 hover:text-blue-700"
+                              title="Test tool"
+                              disabled={!(tool.isActive ?? true)}
+                            >
+                              <Play className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
                               onClick={() =>
                                 copyToolCode(tool.executionCode || "", tool.id)
                               }
@@ -1115,6 +1454,73 @@ def handler(event, context):
           </div>
         </div>
       </div>
+
+      {/* Test Tool Dialog */}
+      <Dialog open={showTestDialog} onOpenChange={setShowTestDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Play className="h-4 w-4" />
+              Test Tool: {testingTool?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Test your custom tool with sample inputs to verify it works
+              correctly.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            {/* Input Form */}
+            <div>
+              <h3 className="text-sm font-medium mb-3">Tool Input</h3>
+              {generateTestInputForm()}
+            </div>
+
+            {/* Test Button */}
+            <div className="flex justify-between items-center">
+              <Button
+                onClick={executeTest}
+                disabled={isTestingLoading}
+                className="flex items-center gap-2"
+              >
+                {isTestingLoading ? (
+                  <>
+                    <Clock className="h-4 w-4 animate-spin" />
+                    Testing...
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4" />
+                    Run Test
+                  </>
+                )}
+              </Button>
+
+              {testResult ? (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setTestResult(null);
+                    setTestInput({});
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <X className="h-4 w-4" />
+                  Clear Results
+                </Button>
+              ) : null}
+            </div>
+
+            {/* Test Results */}
+            {testResult !== null && (
+              <div>
+                <h3 className="text-sm font-medium mb-3">Test Results</h3>
+                {renderTestResult()}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

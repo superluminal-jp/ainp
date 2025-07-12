@@ -2,6 +2,7 @@ import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
 import { chatBedrockFunction } from "../functions/chat-bedrock/resource";
 import { chatBedrockToolsFunction } from "../functions/chat-bedrock-tools/resource";
 import { embedFilesFunction } from "../functions/embed-files/resource";
+import { testToolFunction } from "../functions/test-tool/resource";
 
 const schema = a.schema({
   // Message structure for chat
@@ -162,6 +163,17 @@ const schema = a.schema({
     .returns(a.ref("ChatToolsResponse"))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(chatBedrockToolsFunction)),
+
+  // Test tool query
+  testTool: a
+    .query()
+    .arguments({
+      toolId: a.string().required(),
+      toolInput: a.json(), // Input parameters for the tool (optional)
+    })
+    .returns(a.ref("TestToolResponse"))
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(testToolFunction)),
 
   // Embed files mutation
   embedFiles: a
