@@ -18,11 +18,8 @@ npm ci
 
 # Note: Amplify directory has no dependencies to install
 
-# Build the custom Docker image locally for testing (optional)
-echo "🐳 Building custom Docker image for testing..."
-docker build -t amplify-docker-build -f Dockerfile.amplify . || {
-    echo "❌ Failed to build custom Docker image. This may be expected in CI/CD."
-}
+# Using AWS CodeBuild image with Docker support
+echo "🐳 Using AWS CodeBuild image with Docker support for deployment..."
 
 # Deploy to Amplify
 echo "🚀 Deploying to Amplify..."
