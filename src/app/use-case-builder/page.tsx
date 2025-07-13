@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Card,
   CardContent,
@@ -12,6 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { useSimpleHeader } from "@/components/use-page-header";
 import { AppHeader } from "@/components/app-header";
 import { MermaidDiagram } from "@/components/mermaid-diagram";
+import ChatInput from "@/components/chat-input";
+import ChatDisplay, { type ChatMessage } from "@/components/chat-display";
 import {
   Target,
   Users,
@@ -20,14 +23,227 @@ import {
   Wrench,
   Database,
 } from "lucide-react";
-import { Textarea } from "@/components/ui/textarea";
-import { Button } from "@/components/ui/button";
+import type { Schema } from "../../../amplify/data/resource";
+import { generateClient } from "aws-amplify/data";
+
+const client = generateClient<Schema>();
 
 export default function UseCaseBuilderPage() {
   useSimpleHeader(
     "Use Case Builder",
     "AI Neural Platform - Use Case Definition and Requirements Gathering"
   );
+
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isTyping, setIsTyping] = useState(false);
+
+  const handleSendMessage = async (message: string, files?: File[]) => {
+    if (!message.trim()) {
+      return;
+    }
+
+    const newMessage: ChatMessage = {
+      id: Date.now().toString(),
+      text: message,
+      role: "user",
+      timestamp: new Date(),
+      files,
+    };
+
+    setMessages((prev) => [...prev, newMessage]);
+    setIsTyping(true);
+
+    try {
+      const systemPrompt = `You are an expert AI consultant specializing in use case analysis and requirements gathering. 
+
+## DECISION TREE FRAMEWORK
+Use this decision tree to determine the optimal AI utilization stage:
+1. **Stage 3 (Tool Integration)**: Must execute deterministic actions (API, DB, code)
+2. **Stage 2 (RAG)**: Require up-to-date or traceable domain knowledge
+3. **Stage 1 (System Prompt Control)**: Need stable persona, structured format, or strict policy guardrails
+4. **Stage 0 (LLM-only)**: Default fallback for creative tasks
+
+## REFERENCE DATA
+
+### Typical Use Case Classifications:
+${usecaseData.map((item) => `- **${item.id}**: ${item.use} → Stage ${item.stage} (${item.reason})`).join("\n")}
+
+### Motivation-based Classifications:
+${motivationData.map((item) => `- **${item.id}**: ${item.motivation} → Stage ${item.stage} (${item.reason})`).join("\n")}
+
+### Key Hearing Areas to Consider:
+${hearingItems.map((item) => `- **${item.title}**: ${item.items.join(", ")}`).join("\n")}
+
+### Recommended Questions for Analysis:
+${questionExamples.map((category) => `**${category.category}**:\n${category.questions.map((q) => `- ${q}`).join("\n")}`).join("\n\n")}
+
+### Relevant Frameworks:
+${frameworks.map((framework) => `- ${framework}`).join("\n")}
+
+## YOUR ANALYSIS TASK
+
+Analyze the user's use case and provide a comprehensive response including:
+
+1. **Stage Assessment**: Determine the optimal AI utilization stage (0-3) with clear reasoning
+2. **Use Case Classification**: Match against typical use cases and motivations
+3. **Requirements Analysis**: Identify key requirements from the hearing areas
+4. **Implementation Strategy**: Recommend specific frameworks and approaches
+5. **Follow-up Questions**: Suggest relevant questions from the question examples
+6. **Risk Assessment**: Identify potential challenges and mitigation strategies
+
+Structure your response clearly with headings and bullet points for easy reading.`;
+
+      const requestPayload = {
+        messages: [...messages, newMessage].map((msg) => ({
+          role: msg.role,
+          text: msg.text.trim(),
+          timestamp: msg.timestamp.toISOString(),
+        })),
+        systemPrompt: systemPrompt,
+        modelId: "apac.anthropic.claude-sonnet-4-20250514-v1:0",
+        databaseIds: [],
+        useTools: false,
+        selectedToolIds: [],
+      };
+
+      const result = await client.queries.chatWithBedrockTools(requestPayload);
+
+      if (result.errors && result.errors.length > 0) {
+        throw new Error(
+          `AI Analysis Error: ${result.errors.map((e) => e.message).join(", ")}`
+        );
+      }
+
+      if (result.data) {
+        const aiMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          text: result.data.response,
+          role: "assistant",
+          timestamp: new Date(),
+        };
+
+        setMessages((prev) => [...prev, aiMessage]);
+      } else {
+        throw new Error("No response received from AI");
+      }
+    } catch (error) {
+      console.error("Error analyzing use case:", error);
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        text: `Error analyzing use case: ${error instanceof Error ? error.message : "Unknown error"}`,
+        role: "assistant",
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+  };
+
+  const handleRegenerate = async (messageId: string) => {
+    // Find the user message that preceded this AI response
+    const messageIndex = messages.findIndex((msg) => msg.id === messageId);
+    if (messageIndex > 0 && messages[messageIndex - 1].role === "user") {
+      const userMessage = messages[messageIndex - 1];
+
+      // Remove the current AI response and regenerate
+      setMessages((prev) => prev.slice(0, messageIndex));
+      setIsTyping(true);
+
+      try {
+        const systemPrompt = `You are an expert AI consultant specializing in use case analysis and requirements gathering. 
+
+## DECISION TREE FRAMEWORK
+Use this decision tree to determine the optimal AI utilization stage:
+1. **Stage 3 (Tool Integration)**: Must execute deterministic actions (API, DB, code)
+2. **Stage 2 (RAG)**: Require up-to-date or traceable domain knowledge
+3. **Stage 1 (System Prompt Control)**: Need stable persona, structured format, or strict policy guardrails
+4. **Stage 0 (LLM-only)**: Default fallback for creative tasks
+
+## REFERENCE DATA
+
+### Typical Use Case Classifications:
+${usecaseData.map((item) => `- **${item.id}**: ${item.use} → Stage ${item.stage} (${item.reason})`).join("\n")}
+
+### Motivation-based Classifications:
+${motivationData.map((item) => `- **${item.id}**: ${item.motivation} → Stage ${item.stage} (${item.reason})`).join("\n")}
+
+### Key Hearing Areas to Consider:
+${hearingItems.map((item) => `- **${item.title}**: ${item.items.join(", ")}`).join("\n")}
+
+### Recommended Questions for Analysis:
+${questionExamples.map((category) => `**${category.category}**:\n${category.questions.map((q) => `- ${q}`).join("\n")}`).join("\n\n")}
+
+### Relevant Frameworks:
+${frameworks.map((framework) => `- ${framework}`).join("\n")}
+
+## YOUR ANALYSIS TASK
+
+Analyze the user's use case and provide a comprehensive response including:
+
+1. **Stage Assessment**: Determine the optimal AI utilization stage (0-3) with clear reasoning
+2. **Use Case Classification**: Match against typical use cases and motivations
+3. **Requirements Analysis**: Identify key requirements from the hearing areas
+4. **Implementation Strategy**: Recommend specific frameworks and approaches
+5. **Follow-up Questions**: Suggest relevant questions from the question examples
+6. **Risk Assessment**: Identify potential challenges and mitigation strategies
+
+Structure your response clearly with headings and bullet points for easy reading.`;
+
+        const requestPayload = {
+          messages: [
+            {
+              role: userMessage.role,
+              text: userMessage.text.trim(),
+              timestamp: userMessage.timestamp.toISOString(),
+            },
+          ],
+          systemPrompt: systemPrompt,
+          modelId: "apac.anthropic.claude-sonnet-4-20250514-v1:0",
+          databaseIds: [],
+          useTools: false,
+          selectedToolIds: [],
+        };
+
+        const result =
+          await client.queries.chatWithBedrockTools(requestPayload);
+
+        if (result.errors && result.errors.length > 0) {
+          throw new Error(
+            `AI Analysis Error: ${result.errors.map((e) => e.message).join(", ")}`
+          );
+        }
+
+        if (result.data) {
+          const aiMessage: ChatMessage = {
+            id: Date.now().toString(),
+            text: result.data.response,
+            role: "assistant",
+            timestamp: new Date(),
+          };
+
+          setMessages((prev) => [...prev, aiMessage]);
+        } else {
+          throw new Error("No response received from AI");
+        }
+      } catch (error) {
+        console.error("Error regenerating response:", error);
+        const errorMessage: ChatMessage = {
+          id: Date.now().toString(),
+          text: `Error regenerating response: ${error instanceof Error ? error.message : "Unknown error"}`,
+          role: "assistant",
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, errorMessage]);
+      } finally {
+        setIsTyping(false);
+      }
+    }
+  };
 
   const mermaidChart = `
 flowchart TD
@@ -287,11 +503,30 @@ flowchart TD
             Clarify the processes users want to execute and tasks they want to
             complete, and determine the optimal AI utilization stage
           </p>
+          <div className="flex justify-center">
+            <Badge variant="secondary" className="text-xs">
+              AI analysis includes: Decision tree framework,{" "}
+              {usecaseData.length} use case classifications,{" "}
+              {motivationData.length} motivation types, {hearingItems.length}{" "}
+              hearing areas, and {frameworks.length} frameworks
+            </Badge>
+          </div>
         </div>
 
         <div className="flex flex-col gap-4">
-          <Textarea placeholder="Enter your use case here" className="w-full" />
-          <Button>Submit</Button>
+          <div className="flex-1 min-h-[400px]">
+            <ChatDisplay
+              messages={messages}
+              isTyping={isTyping}
+              onCopy={handleCopy}
+              onRegenerate={handleRegenerate}
+            />
+          </div>
+          <ChatInput
+            onSendMessage={handleSendMessage}
+            disabled={isTyping}
+            placeholder="Describe your use case in detail. Include business context, goals, current processes, and specific requirements or constraints..."
+          />
         </div>
 
         <Tabs defaultValue="decision-tree" className="w-full">
