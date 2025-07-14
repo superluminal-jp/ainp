@@ -34,12 +34,19 @@ export const testToolFunction = defineFunction(
       }),
     });
 
-    // Add IAM permissions for DynamoDB read access
+    // Add IAM permissions for DynamoDB access
     fn.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
-        actions: ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan"],
-        resources: ["*"], // Will be restricted to specific table in backend.ts
+        actions: [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan",
+        ],
+        resources: ["arn:aws:dynamodb:*:*:table/*"], // Access to all DynamoDB tables
       })
     );
 

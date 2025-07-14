@@ -51,7 +51,35 @@ export const chatBedrockFunction = defineFunction(
       })
     );
 
-    // S3 permissions for FAISS indexes will be handled by backend.ts
+    // Add IAM permissions for DynamoDB access
+    fn.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan",
+        ],
+        resources: ["arn:aws:dynamodb:*:*:table/*"], // Access to all DynamoDB tables
+      })
+    );
+
+    // Add IAM permissions for S3 access (for FAISS indexes)
+    fn.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+        ],
+        resources: ["arn:aws:s3:::*/*", "arn:aws:s3:::*"],
+      })
+    );
 
     return fn;
   },

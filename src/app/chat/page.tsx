@@ -246,6 +246,80 @@ export default function ChatPage() {
   } | null>(null);
   const [usageLimitExceeded, setUsageLimitExceeded] = useState(false);
   const [lastUsageUpdate, setLastUsageUpdate] = useState<Date | null>(null);
+  const [loadingUsage, setLoadingUsage] = useState(true);
+
+  // Function to fetch current user usage directly from userUsage table
+  const fetchCurrentUsage = async () => {
+    try {
+      console.log("📊 [ChatPage] Fetching current user usage...");
+      setLoadingUsage(true);
+
+      const currentPeriod = new Date().toISOString().split("T")[0]; // YYYY-MM-DD format
+
+      // Query userUsage table directly for current period
+      const result = await client.models.userUsage.list({
+        filter: {
+          period: {
+            eq: currentPeriod,
+          },
+        },
+      });
+
+      console.log("📊 [ChatPage] Usage query result:", result);
+
+      if (result.errors && result.errors.length > 0) {
+        console.error("❌ [ChatPage] Error fetching usage:", result.errors);
+        setLoadingUsage(false);
+        return;
+      }
+
+      const usageRecords = result.data || [];
+
+      // Calculate totals from all records for current period
+      const totalTokens = usageRecords.reduce(
+        (sum, record) => sum + (record.totalTokens || 0),
+        0
+      );
+      const totalRequests = usageRecords.reduce(
+        (sum, record) => sum + (record.requestCount || 0),
+        0
+      );
+
+      // Get the most recent lastRequestAt
+      const lastRequestTimes = usageRecords
+        .map((record) => record.lastRequestAt)
+        .filter((time): time is string => time !== null && time !== undefined)
+        .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+
+      const usageData = {
+        currentTokens: totalTokens,
+        currentRequests: totalRequests,
+        tokenLimit: 50000, // Default limits
+        requestLimit: 100,
+        period: currentPeriod,
+      };
+
+      console.log("✅ [ChatPage] Usage data loaded:", usageData);
+      setUsageInfo(usageData);
+      setUsageLimitExceeded(totalTokens >= 50000 || totalRequests >= 100);
+
+      if (lastRequestTimes.length > 0) {
+        setLastUsageUpdate(new Date(lastRequestTimes[0]));
+      }
+    } catch (error) {
+      console.error("❌ [ChatPage] Error fetching current usage:", error);
+      // Set default values on error
+      setUsageInfo({
+        currentTokens: 0,
+        currentRequests: 0,
+        tokenLimit: 50000,
+        requestLimit: 100,
+        period: new Date().toISOString().split("T")[0],
+      });
+    } finally {
+      setLoadingUsage(false);
+    }
+  };
 
   useEffect(() => {
     // Load all data from Amplify
@@ -339,7 +413,12 @@ export default function ChatPage() {
       }
     };
 
-    loadData();
+    // Load all configuration data and current usage
+    const loadAllData = async () => {
+      await Promise.all([loadData(), fetchCurrentUsage()]);
+    };
+
+    loadAllData();
   }, []);
 
   // Apply template configuration when template is selected
@@ -466,7 +545,7 @@ export default function ChatPage() {
                   %
                 </>
               ) : (
-                <>📊 Usage: Loading...</>
+                <>📊 Usage: {loadingUsage ? "Loading..." : "0% / 0%"}</>
               )}
             </Badge>
           </TooltipTrigger>
@@ -1004,6 +1083,10 @@ export default function ChatPage() {
         console.log(
           "🎉 [ChatPage] AI response added to conversation successfully"
         );
+
+        // Refresh usage data after successful response
+        console.log("🔄 [ChatPage] Refreshing usage data after response");
+        fetchCurrentUsage();
       } else {
         console.error("❌ [ChatPage] No response data received from Bedrock");
         throw new Error("No response data received");
@@ -1258,11 +1341,26 @@ export default function ChatPage() {
                           <span className="text-sm font-medium">
                             {usageInfo ? "Daily Usage" : "Usage Tracking"}
                           </span>
-                          <span className="text-xs text-muted-foreground">
-                            {usageInfo
-                              ? `Period: ${usageInfo.period}`
-                              : "Loading..."}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">
+                              {usageInfo
+                                ? `Period: ${usageInfo.period}`
+                                : loadingUsage
+                                  ? "Loading..."
+                                  : "Unavailable"}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={fetchCurrentUsage}
+                              disabled={loadingUsage}
+                              className="h-4 w-4 text-muted-foreground hover:text-foreground"
+                            >
+                              <RefreshCcw
+                                className={`h-3 w-3 ${loadingUsage ? "animate-spin" : ""}`}
+                              />
+                            </Button>
+                          </div>
                         </div>
 
                         {/* Token Usage */}
