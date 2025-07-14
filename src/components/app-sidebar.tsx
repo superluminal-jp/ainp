@@ -34,6 +34,7 @@ import {
   Layers,
   Home,
   Target,
+  Settings,
 } from "lucide-react";
 
 // Navigation items for the sidebar
@@ -79,6 +80,12 @@ const navigationItems = [
     url: "/use-case-builder",
     icon: Target,
     description: "Define and analyze AI use cases",
+  },
+  {
+    title: "Account Settings",
+    url: "/account-settings",
+    icon: Settings,
+    description: "Manage your account preferences",
   },
 ];
 
@@ -232,9 +239,9 @@ export function AppSidebar() {
                       <span>Profile</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => handleNavigation("/settings")}
+                      onClick={() => handleNavigation("/account-settings")}
                     >
-                      <span>Settings</span>
+                      <span>Account Settings</span>
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={signOut}>
