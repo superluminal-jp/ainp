@@ -581,7 +581,7 @@ export default function ChatPage() {
                   • Requests: {usageInfo.currentRequests} /{" "}
                   {usageInfo.requestLimit}
                 </p>
-                <p>• Period: {usageInfo.period}</p>
+                <p>• Period: {usageInfo.period} (UTC)</p>
                 {lastUsageUpdate && (
                   <p>• Last updated: {lastUsageUpdate.toLocaleTimeString()}</p>
                 )}

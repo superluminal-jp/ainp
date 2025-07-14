@@ -37,7 +37,20 @@ def get_table_names():
     """Discover DynamoDB table names using multiple strategies."""
     global USER_USAGE_TABLE_NAME, user_usage_table
 
+    logger.info("Starting table name discovery...")
+    logger.info(f"Current value: USER_USAGE_TABLE_NAME={USER_USAGE_TABLE_NAME}")
+
+    # Log all environment variables related to Amplify for debugging
+    logger.info("Available environment variables:")
+    for key, value in sorted(os.environ.items()):
+        if any(
+            pattern in key.lower()
+            for pattern in ["amplify", "table", "user", "tool", "dynamo"]
+        ):
+            logger.info(f"  {key} = {value}")
+
     if USER_USAGE_TABLE_NAME:
+        logger.info("Table name already discovered, skipping discovery")
         return  # Already discovered
 
     # Strategy 1: Try common environment variable patterns
@@ -48,6 +61,7 @@ def get_table_names():
         "AMPLIFY_USERUSAGE_TABLENAME",
     ]
 
+    logger.info("Strategy 1: Trying common environment variable patterns...")
     for pattern in env_patterns:
         usage_name = os.environ.get(pattern)
         if usage_name and not USER_USAGE_TABLE_NAME:
@@ -59,7 +73,9 @@ def get_table_names():
 
     # Strategy 2: Search all environment variables for table-like names
     if not USER_USAGE_TABLE_NAME:
-        logger.info("Searching all environment variables for table names...")
+        logger.info(
+            "Strategy 2: Searching all environment variables for table names..."
+        )
         for key, value in os.environ.items():
             if any(pattern in key.lower() for pattern in ["userusage", "user_usage"]):
                 USER_USAGE_TABLE_NAME = value
@@ -72,11 +88,12 @@ def get_table_names():
     if not USER_USAGE_TABLE_NAME:
         try:
             logger.info(
-                "Attempting to discover table names by listing DynamoDB tables..."
+                "Strategy 3: Attempting to discover table names by listing DynamoDB tables..."
             )
             dynamodb_client = boto3.client("dynamodb")
             response = dynamodb_client.list_tables()
             table_names = response.get("TableNames", [])
+            logger.info(f"Found {len(table_names)} DynamoDB tables")
 
             for table_name in table_names:
                 if any(
@@ -95,13 +112,19 @@ def get_table_names():
             )
 
     # Initialize table instance
+    logger.info("Initializing table instance...")
     try:
         if USER_USAGE_TABLE_NAME:
             user_usage_table = dynamodb.Table(USER_USAGE_TABLE_NAME)  # type: ignore
             logger.info(f"Initialized user_usage_table with {USER_USAGE_TABLE_NAME}")
+        else:
+            logger.error("Could not find USER_USAGE_TABLE_NAME")
 
     except Exception as e:
         logger.error(f"Failed to initialize DynamoDB table: {str(e)}")
+        import traceback
+
+        logger.error(f"Traceback: {traceback.format_exc()}")
 
     # Log final status
     logger.info(
@@ -344,14 +367,21 @@ def check_user_usage_limits(user_id: str) -> Tuple[bool, Dict[str, Any]]:
     """Check if user has exceeded their usage limits."""
     global user_usage_table, USER_USAGE_TABLE_NAME
 
+    logger.info(f"Checking usage limits for user_id: {user_id}")
+    logger.info(f"Current USER_USAGE_TABLE_NAME: {USER_USAGE_TABLE_NAME}")
+
     # Try to discover table names if not already done
     if not USER_USAGE_TABLE_NAME or not user_usage_table:
         logger.info("Re-attempting table discovery for usage limits check...")
         get_table_names()
 
-    if not USER_USAGE_TABLE_NAME or not user_id:
-        logger.info("Usage tracking not configured - allowing request")
+    if not USER_USAGE_TABLE_NAME:
+        logger.warning("Usage tracking not configured - allowing request")
         return True, {"reason": "Usage tracking not configured"}
+
+    if not user_id:
+        logger.warning("No user_id provided - allowing request")
+        return True, {"reason": "No user_id provided"}
 
     if not user_usage_table:
         logger.warning("Could not initialize user usage table - allowing request")
@@ -359,6 +389,7 @@ def check_user_usage_limits(user_id: str) -> Tuple[bool, Dict[str, Any]]:
 
     try:
         current_period = get_current_period()
+        logger.info(f"Checking usage for period: {current_period}")
 
         # Query for user's usage in current period
         response = user_usage_table.scan(
@@ -367,14 +398,20 @@ def check_user_usage_limits(user_id: str) -> Tuple[bool, Dict[str, Any]]:
         )
 
         usage_items = response.get("Items", [])
+        logger.info(
+            f"Found {len(usage_items)} usage records for user {user_id} in period {current_period}"
+        )
 
         if not usage_items:
             # No usage record exists yet, user is within limits
+            logger.info("No existing usage records found - user is within limits")
             return True, {"newUser": True}
 
         # Calculate total usage across all records for this user/period
         total_tokens = sum(item.get("totalTokens", 0) for item in usage_items)
         total_requests = sum(item.get("requestCount", 0) for item in usage_items)
+
+        logger.info(f"Current usage: tokens={total_tokens}, requests={total_requests}")
 
         usage_info = {
             "totalTokens": total_tokens,
@@ -386,6 +423,9 @@ def check_user_usage_limits(user_id: str) -> Tuple[bool, Dict[str, Any]]:
 
         # Check token limit
         if total_tokens >= DEFAULT_DAILY_TOKEN_LIMIT:
+            logger.warning(
+                f"Token limit exceeded: {total_tokens}/{DEFAULT_DAILY_TOKEN_LIMIT}"
+            )
             return False, {
                 **usage_info,
                 "reason": f"Daily token limit exceeded ({total_tokens}/{DEFAULT_DAILY_TOKEN_LIMIT})",
@@ -393,15 +433,23 @@ def check_user_usage_limits(user_id: str) -> Tuple[bool, Dict[str, Any]]:
 
         # Check request limit
         if total_requests >= DEFAULT_DAILY_REQUEST_LIMIT:
+            logger.warning(
+                f"Request limit exceeded: {total_requests}/{DEFAULT_DAILY_REQUEST_LIMIT}"
+            )
             return False, {
                 **usage_info,
                 "reason": f"Daily request limit exceeded ({total_requests}/{DEFAULT_DAILY_REQUEST_LIMIT})",
             }
 
+        logger.info("User is within usage limits")
         return True, usage_info
 
     except Exception as e:
         logger.error(f"Error checking user usage limits: {str(e)}")
+        logger.error(f"Error type: {type(e).__name__}")
+        import traceback
+
+        logger.error(f"Traceback: {traceback.format_exc()}")
         # If there's an error checking limits, allow the request to proceed
         return True, {"reason": f"Error checking limits: {str(e)}"}
 
@@ -410,32 +458,47 @@ def update_user_usage(user_id: str, usage_data: Dict[str, int]) -> bool:
     """Update user's token usage in DynamoDB."""
     global user_usage_table, USER_USAGE_TABLE_NAME
 
+    logger.info(f"Starting update_user_usage for user_id: {user_id}")
+    logger.info(f"Usage data: {usage_data}")
+    logger.info(f"Current USER_USAGE_TABLE_NAME: {USER_USAGE_TABLE_NAME}")
+
     # Try to discover table names if not already done
     if not USER_USAGE_TABLE_NAME or not user_usage_table:
         logger.info("Re-attempting table discovery for usage update...")
         get_table_names()
 
-    if not USER_USAGE_TABLE_NAME or not user_id:
-        logger.info("Usage tracking not configured - skipping update")
-        return True
+    if not USER_USAGE_TABLE_NAME:
+        logger.error("USER_USAGE_TABLE_NAME is not set - usage tracking disabled")
+        return False
+
+    if not user_id:
+        logger.error("user_id is empty - cannot update usage")
+        return False
 
     if not user_usage_table:
-        logger.warning("Could not initialize user usage table - skipping update")
-        return True
+        logger.error("Could not initialize user usage table - cannot update usage")
+        return False
 
     try:
         current_period = get_current_period()
-        current_time = datetime.now().isoformat()
+        current_time = datetime.now()
 
         # Create a unique ID for this usage record
-        usage_id = f"{user_id}#{current_period}#{int(datetime.now().timestamp())}"
+        usage_id = f"{user_id}#{current_period}#{int(current_time.timestamp())}"
 
         # Extract usage data
         input_tokens = usage_data.get("inputTokens", 0)
         output_tokens = usage_data.get("outputTokens", 0)
         total_tokens = usage_data.get("totalTokens", input_tokens + output_tokens)
 
+        logger.info(
+            f"Attempting to save usage: period={current_period}, totalTokens={total_tokens}"
+        )
+
         # Try to find existing record for this user/period
+        logger.info(
+            f"Scanning for existing records for user {user_id} in period {current_period}"
+        )
         response = user_usage_table.scan(
             FilterExpression=Attr("userId").eq(user_id)
             & Attr("period").eq(current_period)
@@ -451,12 +514,15 @@ def update_user_usage(user_id: str, usage_data: Dict[str, int]) -> bool:
             latest_item = max(existing_items, key=lambda x: x.get("updatedAt", ""))
             item_id = latest_item["id"]
 
+            logger.info(f"Updating existing record with id: {item_id}")
+
             # Update existing record
             update_expression = (
                 "ADD totalTokens :total, inputTokens :input, outputTokens :output, requestCount :req "
                 "SET lastRequestAt = :last, updatedAt = :updated"
             )
-            user_usage_table.update_item(
+
+            update_result = user_usage_table.update_item(
                 Key={"id": item_id},
                 UpdateExpression=update_expression,
                 ExpressionAttributeValues={
@@ -467,29 +533,45 @@ def update_user_usage(user_id: str, usage_data: Dict[str, int]) -> bool:
                     ":last": current_time,
                     ":updated": current_time,
                 },
+                ReturnValues="ALL_NEW",
+            )
+
+            logger.info(
+                f"Successfully updated existing record: {update_result.get('Attributes', {})}"
             )
         else:
             # Create new record
-            user_usage_table.put_item(
-                Item={
-                    "id": usage_id,
-                    "userId": user_id,
-                    "period": current_period,
-                    "totalTokens": total_tokens,
-                    "inputTokens": input_tokens,
-                    "outputTokens": output_tokens,
-                    "requestCount": 1,
-                    "lastRequestAt": current_time,
-                    "createdAt": current_time,
-                    "updatedAt": current_time,
-                    "owner": user_id,  # Set owner for Amplify authorization
-                }
-            )
+            logger.info(f"Creating new usage record with id: {usage_id}")
 
+            new_item = {
+                "id": usage_id,
+                "userId": user_id,
+                "period": current_period,
+                "totalTokens": total_tokens,
+                "inputTokens": input_tokens,
+                "outputTokens": output_tokens,
+                "requestCount": 1,
+                "lastRequestAt": current_time,
+                "createdAt": current_time,
+                "updatedAt": current_time,
+                "owner": user_id,  # Set owner for Amplify authorization
+            }
+
+            logger.info(f"Putting new item: {new_item}")
+
+            put_result = user_usage_table.put_item(Item=new_item)
+
+            logger.info(f"Successfully created new record: {put_result}")
+
+        logger.info("Usage update completed successfully")
         return True
 
     except Exception as e:
         logger.error(f"Error updating user usage: {str(e)}")
+        logger.error(f"Error type: {type(e).__name__}")
+        import traceback
+
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return False
 
 

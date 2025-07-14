@@ -58,6 +58,7 @@ export const chatBedrockFunction = defineFunction(
         actions: [
           "dynamodb:GetItem",
           "dynamodb:PutItem",
+          "dynamodb:ListTables",
           "dynamodb:UpdateItem",
           "dynamodb:DeleteItem",
           "dynamodb:Query",
