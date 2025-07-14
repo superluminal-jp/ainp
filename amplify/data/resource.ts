@@ -17,6 +17,8 @@ const schema = a.schema({
     response: a.string().required(),
     modelId: a.string(),
     usage: a.json(), // Usage statistics from the model
+    usageLimitExceeded: a.boolean(), // Whether user has exceeded usage limits
+    usageInfo: a.json(), // Current usage information and limits
   }),
 
   // Response structure for chat with tools
@@ -26,6 +28,8 @@ const schema = a.schema({
     usage: a.json(), // Usage statistics from the model
     toolsUsed: a.integer(), // Number of tools used in the response
     structuredOutput: a.boolean(), // Whether structured output was used
+    usageLimitExceeded: a.boolean(), // Whether user has exceeded usage limits
+    usageInfo: a.json(), // Current usage information and limits
   }),
 
   // Response structure for embedding files
@@ -130,6 +134,24 @@ const schema = a.schema({
       createdAt: a.datetime(),
       updatedAt: a.datetime(),
       owner: a.string(),
+    })
+    .authorization((allow) => [
+      allow.owner().to(["read", "create", "update", "delete"]),
+    ]),
+
+  // User token usage tracking
+  userUsage: a
+    .model({
+      id: a.id().required(),
+      userId: a.string().required(),
+      period: a.string().required(), // Format: YYYY-MM-DD for daily limits
+      totalTokens: a.integer().default(0),
+      inputTokens: a.integer().default(0),
+      outputTokens: a.integer().default(0),
+      requestCount: a.integer().default(0),
+      lastRequestAt: a.datetime(),
+      createdAt: a.datetime(),
+      updatedAt: a.datetime(),
     })
     .authorization((allow) => [
       allow.owner().to(["read", "create", "update", "delete"]),

@@ -10,7 +10,13 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 dynamodb = boto3.resource("dynamodb")
-TOOLSPECS_TABLE_NAME = os.environ.get("TOOLSPECS_TABLE_NAME")
+
+# Try to get table names from Amplify's automatic environment variables
+TOOLSPECS_TABLE_NAME = (
+    os.environ.get("TOOLSPECS_TABLE_NAME")
+    or os.environ.get("AMPLIFY_TOOLSPECS_NAME")
+    or os.environ.get("AMPLIFY_TOOLSPECS_TABLE_NAME")
+)
 toolspecs_table = dynamodb.Table(TOOLSPECS_TABLE_NAME) if TOOLSPECS_TABLE_NAME else None  # type: ignore
 
 

@@ -7,6 +7,8 @@ import tempfile
 import numpy as np
 import faiss
 from typing import List, Dict, Optional, Any, Tuple
+from datetime import datetime
+from boto3.dynamodb.conditions import Attr
 
 
 logger = logging.getLogger()
@@ -14,11 +16,25 @@ logger.setLevel(logging.INFO)
 
 bedrock_client = boto3.client("bedrock-runtime")
 s3_client = boto3.client("s3")
+dynamodb = boto3.resource("dynamodb")
 
 STORAGE_BUCKET_NAME = os.environ.get("STORAGE_BUCKET_NAME")
+
+# Try to get table names from Amplify's automatic environment variables
+USER_USAGE_TABLE_NAME = (
+    os.environ.get("USER_USAGE_TABLE_NAME")
+    or os.environ.get("AMPLIFY_USERUSAGE_NAME")
+    or os.environ.get("AMPLIFY_USERUSAGE_TABLE_NAME")
+)
 FAISS_INDEX_PREFIX = os.environ.get("FAISS_INDEX_PREFIX", "faiss-indexes")
 EMBEDDING_MODEL_ID = "amazon.titan-embed-text-v1"
 EMBEDDING_DIMENSION = 1536
+
+# Default usage limits (can be made configurable)
+DEFAULT_DAILY_TOKEN_LIMIT = int(os.environ.get("DAILY_TOKEN_LIMIT", "50000"))
+DEFAULT_DAILY_REQUEST_LIMIT = int(os.environ.get("DAILY_REQUEST_LIMIT", "100"))
+
+user_usage_table = dynamodb.Table(USER_USAGE_TABLE_NAME) if USER_USAGE_TABLE_NAME else None  # type: ignore
 
 
 def get_embeddings(texts: List[str]) -> List[List[float]]:
@@ -198,9 +214,210 @@ def build_rag_context(relevant_docs: List[Dict]) -> str:
     return "\n".join(filter(None, context_parts)) if processed_docs > 0 else ""
 
 
+def get_user_id_from_event(event) -> Optional[str]:
+    """Extract user ID from the Lambda event context."""
+    try:
+        # Try multiple locations where user ID might be stored
+        identity = event.get("identity")
+        if identity:
+            # Check for Cognito identity ID
+            if isinstance(identity, dict):
+                user_id = (
+                    identity.get("sub")
+                    or identity.get("cognitoIdentityId")
+                    or identity.get("userId")
+                )
+                if user_id:
+                    return str(user_id)
+
+        # Check request context for user identity
+        request_context = event.get("requestContext", {})
+        if isinstance(request_context, dict):
+            identity_ctx = request_context.get("identity", {})
+            if isinstance(identity_ctx, dict):
+                user_id = (
+                    identity_ctx.get("sub")
+                    or identity_ctx.get("cognitoIdentityId")
+                    or identity_ctx.get("userId")
+                )
+                if user_id:
+                    return str(user_id)
+
+        # Check arguments for user context (if passed explicitly)
+        arguments = event.get("arguments", {})
+        if isinstance(arguments, dict):
+            user_id = arguments.get("userId")
+            if user_id:
+                return str(user_id)
+
+        # Fallback: use a hash of the event for anonymous users (not recommended for production)
+        logger.warning("Could not extract user ID from event, using fallback")
+        return "anonymous"
+
+    except Exception as e:
+        logger.error(f"Error extracting user ID: {str(e)}")
+        return "anonymous"
+
+
+def get_current_period() -> str:
+    """Get current period string for daily limits (YYYY-MM-DD format)."""
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+def check_user_usage_limits(user_id: str) -> Tuple[bool, Dict[str, Any]]:
+    """Check if user has exceeded their usage limits."""
+    if not USER_USAGE_TABLE_NAME or not user_id:
+        logger.info("Usage tracking not configured - allowing request")
+        return True, {"reason": "Usage tracking not configured"}
+
+    if not user_usage_table:
+        logger.warning("Could not initialize user usage table - allowing request")
+        return True, {"reason": "Usage tracking table not available"}
+
+    try:
+        current_period = get_current_period()
+
+        # Query for user's usage in current period
+        response = user_usage_table.scan(
+            FilterExpression=Attr("userId").eq(user_id)
+            & Attr("period").eq(current_period)
+        )
+
+        usage_items = response.get("Items", [])
+
+        if not usage_items:
+            # No usage record exists yet, user is within limits
+            return True, {"newUser": True}
+
+        # Calculate total usage across all records for this user/period
+        total_tokens = sum(item.get("totalTokens", 0) for item in usage_items)
+        total_requests = sum(item.get("requestCount", 0) for item in usage_items)
+
+        usage_info = {
+            "totalTokens": total_tokens,
+            "totalRequests": total_requests,
+            "tokenLimit": DEFAULT_DAILY_TOKEN_LIMIT,
+            "requestLimit": DEFAULT_DAILY_REQUEST_LIMIT,
+            "period": current_period,
+        }
+
+        # Check token limit
+        if total_tokens >= DEFAULT_DAILY_TOKEN_LIMIT:
+            return False, {
+                **usage_info,
+                "reason": f"Daily token limit exceeded ({total_tokens}/{DEFAULT_DAILY_TOKEN_LIMIT})",
+            }
+
+        # Check request limit
+        if total_requests >= DEFAULT_DAILY_REQUEST_LIMIT:
+            return False, {
+                **usage_info,
+                "reason": f"Daily request limit exceeded ({total_requests}/{DEFAULT_DAILY_REQUEST_LIMIT})",
+            }
+
+        return True, usage_info
+
+    except Exception as e:
+        logger.error(f"Error checking user usage limits: {str(e)}")
+        # If there's an error checking limits, allow the request to proceed
+        return True, {"reason": f"Error checking limits: {str(e)}"}
+
+
+def update_user_usage(user_id: str, usage_data: Dict[str, int]) -> bool:
+    """Update user's token usage in DynamoDB."""
+    if not USER_USAGE_TABLE_NAME or not user_id:
+        logger.info("Usage tracking not configured - skipping update")
+        return True
+
+    if not user_usage_table:
+        logger.warning("Could not initialize user usage table - skipping update")
+        return True
+
+    try:
+        current_period = get_current_period()
+        current_time = datetime.now().isoformat()
+
+        # Create a unique ID for this usage record
+        usage_id = f"{user_id}#{current_period}#{int(datetime.now().timestamp())}"
+
+        # Extract usage data
+        input_tokens = usage_data.get("inputTokens", 0)
+        output_tokens = usage_data.get("outputTokens", 0)
+        total_tokens = usage_data.get("totalTokens", input_tokens + output_tokens)
+
+        # Try to find existing record for this user/period
+        response = user_usage_table.scan(
+            FilterExpression=Attr("userId").eq(user_id)
+            & Attr("period").eq(current_period)
+        )
+
+        existing_items = response.get("Items", [])
+
+        if existing_items:
+            # Update the most recent existing record
+            latest_item = max(existing_items, key=lambda x: x.get("updatedAt", ""))
+            item_id = latest_item["id"]
+
+            # Update existing record
+            update_expression = (
+                "ADD totalTokens :total, inputTokens :input, outputTokens :output, requestCount :req "
+                "SET lastRequestAt = :last, updatedAt = :updated"
+            )
+            user_usage_table.update_item(
+                Key={"id": item_id},
+                UpdateExpression=update_expression,
+                ExpressionAttributeValues={
+                    ":total": total_tokens,
+                    ":input": input_tokens,
+                    ":output": output_tokens,
+                    ":req": 1,
+                    ":last": current_time,
+                    ":updated": current_time,
+                },
+            )
+        else:
+            # Create new record
+            user_usage_table.put_item(
+                Item={
+                    "id": usage_id,
+                    "userId": user_id,
+                    "period": current_period,
+                    "totalTokens": total_tokens,
+                    "inputTokens": input_tokens,
+                    "outputTokens": output_tokens,
+                    "requestCount": 1,
+                    "lastRequestAt": current_time,
+                    "createdAt": current_time,
+                    "updatedAt": current_time,
+                }
+            )
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error updating user usage: {str(e)}")
+        return False
+
+
 def handler(event, context):
     """AWS Lambda handler for chat with Bedrock Converse API and RAG support."""
     try:
+        # Extract user ID for usage tracking
+        user_id = get_user_id_from_event(event)
+        if not user_id:
+            user_id = "anonymous"
+
+        # Check user usage limits before processing
+        within_limits, usage_info = check_user_usage_limits(user_id)
+        if not within_limits:
+            return {
+                "response": f"I apologize, but you have exceeded your usage limits. {usage_info.get('reason', '')}",
+                "modelId": "apac.anthropic.claude-sonnet-4-20250514-v1:0",
+                "usage": {},
+                "usageLimitExceeded": True,
+                "usageInfo": usage_info,
+            }
+
         arguments = event.get("arguments", {})
         if not isinstance(arguments, dict):
             raise ValueError("Event must contain 'arguments' dictionary")
@@ -290,11 +507,37 @@ def handler(event, context):
         if not response_text:
             response_text = "I apologize, but I couldn't generate a response."
 
-        return {
+        # Get usage data from response
+        usage = response.get("usage", {})
+
+        # Update user usage tracking after successful response
+        if user_id and usage:
+            update_success = update_user_usage(user_id, usage)
+            if not update_success:
+                logger.warning(f"Failed to update usage for user {user_id}")
+
+        # Include usage information in response
+        response_data = {
             "response": response_text,
             "modelId": model_id,
-            "usage": response.get("usage", {}),
+            "usage": usage,
+            "usageLimitExceeded": False,
         }
+
+        # Add current usage info if available
+        if usage_info and not usage_info.get("reason"):
+            response_data["usageInfo"] = {
+                "currentTokens": usage_info.get("totalTokens", 0)
+                + usage.get("totalTokens", 0),
+                "currentRequests": usage_info.get("totalRequests", 0) + 1,
+                "tokenLimit": usage_info.get("tokenLimit", DEFAULT_DAILY_TOKEN_LIMIT),
+                "requestLimit": usage_info.get(
+                    "requestLimit", DEFAULT_DAILY_REQUEST_LIMIT
+                ),
+                "period": usage_info.get("period", get_current_period()),
+            }
+
+        return response_data
 
     except ValueError as e:
         return {

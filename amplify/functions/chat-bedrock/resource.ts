@@ -17,6 +17,7 @@ export const chatBedrockFunction = defineFunction(
       memorySize: 512,
       environment: {
         FAISS_INDEX_PREFIX: "faiss-indexes",
+        // Environment variables for usage tracking will be set by Amplify data resolvers
       },
       code: Code.fromAsset(functionDir, {
         bundling: {

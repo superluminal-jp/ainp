@@ -41,6 +41,7 @@ import {
 import { toast } from "sonner";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useHeader } from "@/components/header-context";
+import { Progress } from "@/components/ui/progress";
 
 import { AppHeader } from "@/components/app-header";
 import ChatDisplay from "@/components/chat-display";
@@ -235,6 +236,17 @@ export default function ChatPage() {
   const [showConfiguration, setShowConfiguration] = useState(true);
   const [showReadme, setShowReadme] = useState(false);
 
+  // Usage tracking state
+  const [usageInfo, setUsageInfo] = useState<{
+    currentTokens: number;
+    currentRequests: number;
+    tokenLimit: number;
+    requestLimit: number;
+    period: string;
+  } | null>(null);
+  const [usageLimitExceeded, setUsageLimitExceeded] = useState(false);
+  const [lastUsageUpdate, setLastUsageUpdate] = useState<Date | null>(null);
+
   useEffect(() => {
     // Load all data from Amplify
     const loadData = async () => {
@@ -421,6 +433,70 @@ export default function ChatPage() {
   const headerActions = useMemo(
     () => (
       <div className="flex items-center gap-2">
+        {/* Usage Status Badge - Always Visible */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge
+              variant={
+                usageLimitExceeded
+                  ? "destructive"
+                  : usageInfo &&
+                      (usageInfo.currentTokens / usageInfo.tokenLimit > 0.8 ||
+                        usageInfo.currentRequests / usageInfo.requestLimit >
+                          0.8)
+                    ? "default"
+                    : usageInfo
+                      ? "secondary"
+                      : "outline"
+              }
+              className="text-xs cursor-pointer"
+            >
+              {usageLimitExceeded ? (
+                <>⚠️ Limit Exceeded</>
+              ) : usageInfo ? (
+                <>
+                  📊{" "}
+                  {Math.round(
+                    (usageInfo.currentTokens / usageInfo.tokenLimit) * 100
+                  )}
+                  % /{" "}
+                  {Math.round(
+                    (usageInfo.currentRequests / usageInfo.requestLimit) * 100
+                  )}
+                  %
+                </>
+              ) : (
+                <>📊 Usage: Loading...</>
+              )}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>
+            {usageLimitExceeded ? (
+              <p>You have exceeded your daily usage limits</p>
+            ) : usageInfo ? (
+              <div className="space-y-1">
+                <p>Daily Usage Status:</p>
+                <p>
+                  • Tokens: {usageInfo.currentTokens.toLocaleString()} /{" "}
+                  {usageInfo.tokenLimit.toLocaleString()}
+                </p>
+                <p>
+                  • Requests: {usageInfo.currentRequests} /{" "}
+                  {usageInfo.requestLimit}
+                </p>
+                <p>• Period: {usageInfo.period}</p>
+                {lastUsageUpdate && (
+                  <p>• Last updated: {lastUsageUpdate.toLocaleTimeString()}</p>
+                )}
+              </div>
+            ) : (
+              <p>
+                Usage information will be available after your first message
+              </p>
+            )}
+          </TooltipContent>
+        </Tooltip>
+
         {selectedDatabases.length > 0 && (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -504,6 +580,8 @@ export default function ChatPage() {
       customTools,
       clearChat,
       useStructuredOutput,
+      usageInfo,
+      usageLimitExceeded,
     ]
   );
 
@@ -572,6 +650,13 @@ export default function ChatPage() {
 
   const handleSendMessage = async (message: string, files?: File[]) => {
     console.log("🔄 [ChatPage] handleSendMessage called");
+
+    // Check if usage limits are exceeded before processing
+    if (usageLimitExceeded) {
+      console.warn("⚠️ [ChatPage] Cannot send message - usage limits exceeded");
+      toast.error("Cannot send message: Usage limits exceeded");
+      return;
+    }
 
     const newMessage: Message = {
       id: Date.now().toString(),
@@ -787,7 +872,68 @@ export default function ChatPage() {
           hasUsage: !!responseData.usage,
           toolsUsed: responseData.toolsUsed || 0,
           responseType: typeof responseData,
+          usageLimitExceeded: responseData.usageLimitExceeded,
+          hasUsageInfo: !!responseData.usageInfo,
         });
+
+        // Handle usage limit exceeded case
+        if (responseData.usageLimitExceeded) {
+          console.warn("⚠️ [ChatPage] Usage limit exceeded");
+          setUsageLimitExceeded(true);
+
+          const errorResponse: Message = {
+            id: (Date.now() + 1).toString(),
+            text:
+              responseData.response ||
+              "You have exceeded your usage limits. Please try again later.",
+            role: "assistant",
+            timestamp: new Date(),
+          };
+
+          setMessages((prev) => [...prev, errorResponse]);
+          toast.error("Usage limit exceeded");
+          return;
+        }
+
+        // Update usage information if available
+        if (
+          responseData.usageInfo &&
+          typeof responseData.usageInfo === "object" &&
+          responseData.usageInfo !== null
+        ) {
+          console.log(
+            "📊 [ChatPage] Updating usage information:",
+            responseData.usageInfo
+          );
+
+          const usageData = responseData.usageInfo as {
+            currentTokens: number;
+            currentRequests: number;
+            tokenLimit: number;
+            requestLimit: number;
+            period: string;
+          };
+
+          const { currentTokens, tokenLimit, currentRequests, requestLimit } =
+            usageData;
+          const tokenUsagePercent = currentTokens / tokenLimit;
+          const requestUsagePercent = currentRequests / requestLimit;
+
+          // Show warnings when approaching limits
+          if (tokenUsagePercent >= 0.9 || requestUsagePercent >= 0.9) {
+            toast.error(
+              `⚠️ Approaching usage limits! Tokens: ${Math.round(tokenUsagePercent * 100)}%, Requests: ${Math.round(requestUsagePercent * 100)}%`
+            );
+          } else if (tokenUsagePercent >= 0.8 || requestUsagePercent >= 0.8) {
+            toast.warning(
+              `⚠️ High usage warning! Tokens: ${Math.round(tokenUsagePercent * 100)}%, Requests: ${Math.round(requestUsagePercent * 100)}%`
+            );
+          }
+
+          setUsageInfo(usageData);
+          setLastUsageUpdate(new Date());
+          setUsageLimitExceeded(false);
+        }
 
         const aiResponse: Message = {
           id: (Date.now() + 1).toString(),
@@ -827,6 +973,26 @@ export default function ChatPage() {
 
         if (isStructuredOutput) {
           features.push("with structured output");
+        }
+
+        // Add usage information to success message
+        if (
+          responseData.usageInfo &&
+          typeof responseData.usageInfo === "object" &&
+          responseData.usageInfo !== null
+        ) {
+          const usageData = responseData.usageInfo as {
+            currentTokens: number;
+            currentRequests: number;
+            tokenLimit: number;
+            requestLimit: number;
+            period: string;
+          };
+          const { currentTokens, tokenLimit, currentRequests, requestLimit } =
+            usageData;
+          features.push(
+            `(${currentTokens}/${tokenLimit} tokens, ${currentRequests}/${requestLimit} requests)`
+          );
         }
 
         if (features.length > 0) {
@@ -1058,6 +1224,129 @@ export default function ChatPage() {
             {/* Configuration Section */}
             {showConfiguration && (
               <div className="space-y-3 p-3 bg-muted/50 rounded-lg">
+                {/* Usage Information Display - Always Visible */}
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Usage Status
+                  </Label>
+                  <div
+                    className={`p-3 rounded-lg border ${
+                      usageLimitExceeded
+                        ? "bg-destructive/10 border-destructive/20"
+                        : usageInfo &&
+                            (usageInfo.currentTokens / usageInfo.tokenLimit >
+                              0.8 ||
+                              usageInfo.currentRequests /
+                                usageInfo.requestLimit >
+                                0.8)
+                          ? "bg-yellow-50 border-yellow-200 dark:bg-yellow-950/20 dark:border-yellow-800"
+                          : usageInfo
+                            ? "bg-green-50 border-green-200 dark:bg-green-950/20 dark:border-green-800"
+                            : "bg-muted/50 border-border"
+                    }`}
+                  >
+                    {usageLimitExceeded ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-destructive animate-pulse"></div>
+                        <span className="text-sm font-medium text-destructive">
+                          Usage Limit Exceeded
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">
+                            {usageInfo ? "Daily Usage" : "Usage Tracking"}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {usageInfo
+                              ? `Period: ${usageInfo.period}`
+                              : "Loading..."}
+                          </span>
+                        </div>
+
+                        {/* Token Usage */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-xs">
+                            <span>Tokens</span>
+                            <span className="font-mono">
+                              {usageInfo
+                                ? `${usageInfo.currentTokens.toLocaleString()} / ${usageInfo.tokenLimit.toLocaleString()}`
+                                : "0 / 50,000"}
+                            </span>
+                          </div>
+                          <Progress
+                            value={
+                              usageInfo
+                                ? Math.min(
+                                    (usageInfo.currentTokens /
+                                      usageInfo.tokenLimit) *
+                                      100,
+                                    100
+                                  )
+                                : 0
+                            }
+                            className={`h-1.5 ${
+                              usageInfo &&
+                              usageInfo.currentTokens / usageInfo.tokenLimit >
+                                0.9
+                                ? "[&>[data-slot=progress-indicator]]:bg-destructive"
+                                : usageInfo &&
+                                    usageInfo.currentTokens /
+                                      usageInfo.tokenLimit >
+                                      0.8
+                                  ? "[&>[data-slot=progress-indicator]]:bg-yellow-500"
+                                  : "[&>[data-slot=progress-indicator]]:bg-green-500"
+                            }`}
+                          />
+                        </div>
+
+                        {/* Request Usage */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-xs">
+                            <span>Requests</span>
+                            <span className="font-mono">
+                              {usageInfo
+                                ? `${usageInfo.currentRequests} / ${usageInfo.requestLimit}`
+                                : "0 / 100"}
+                            </span>
+                          </div>
+                          <Progress
+                            value={
+                              usageInfo
+                                ? Math.min(
+                                    (usageInfo.currentRequests /
+                                      usageInfo.requestLimit) *
+                                      100,
+                                    100
+                                  )
+                                : 0
+                            }
+                            className={`h-1.5 ${
+                              usageInfo &&
+                              usageInfo.currentRequests /
+                                usageInfo.requestLimit >
+                                0.9
+                                ? "[&>[data-slot=progress-indicator]]:bg-destructive"
+                                : usageInfo &&
+                                    usageInfo.currentRequests /
+                                      usageInfo.requestLimit >
+                                      0.8
+                                  ? "[&>[data-slot=progress-indicator]]:bg-yellow-500"
+                                  : "[&>[data-slot=progress-indicator]]:bg-green-500"
+                            }`}
+                          />
+                        </div>
+
+                        {lastUsageUpdate && (
+                          <div className="text-xs text-muted-foreground">
+                            Last updated: {lastUsageUpdate.toLocaleTimeString()}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
                 {/* Template Selection - Full Width */}
                 <div className="space-y-1">
                   <Label className="text-xs font-medium text-muted-foreground">
@@ -1616,12 +1905,16 @@ export default function ChatPage() {
                   <ChatInput
                     onSendMessage={handleSendMessage}
                     placeholder={
-                      messageMode === "text"
-                        ? "Type your message here... (Shift+Enter for new line, Enter to send)"
-                        : "Voice mode - click to record"
+                      usageLimitExceeded
+                        ? "Usage limit exceeded - please wait for reset"
+                        : messageMode === "text"
+                          ? "Type your message here... (Shift+Enter for new line, Enter to send)"
+                          : "Voice mode - click to record"
                     }
-                    disabled={messageMode === "voice" || isTyping}
-                    allowFileAttach={true}
+                    disabled={
+                      messageMode === "voice" || isTyping || usageLimitExceeded
+                    }
+                    allowFileAttach={!usageLimitExceeded}
                   />
                 </div>
               ) : (
