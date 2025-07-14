@@ -152,6 +152,7 @@ const schema = a.schema({
       lastRequestAt: a.datetime(),
       createdAt: a.datetime(),
       updatedAt: a.datetime(),
+      owner: a.string(),
     })
     .authorization((allow) => [
       allow.owner().to(["read", "create", "update", "delete"]),

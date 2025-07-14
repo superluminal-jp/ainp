@@ -17,8 +17,8 @@ export const chatBedrockToolsFunction = defineFunction(
       memorySize: 1024, // Increased memory for tool processing
       environment: {
         FAISS_INDEX_PREFIX: "faiss-indexes",
-        // These will be automatically set by Amplify when the function is used as a data resolver
-        // The actual table names will be injected at deployment time
+        // DynamoDB table names will be automatically injected by Amplify
+        // when this function is used as a GraphQL resolver
       },
       code: Code.fromAsset(functionDir, {
         bundling: {

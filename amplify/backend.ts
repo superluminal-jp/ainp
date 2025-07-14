@@ -42,6 +42,12 @@ backend.chatBedrockFunction.addEnvironment(
   backend.storage.resources.bucket.bucketName
 );
 
+// Add userUsage table name to chat-bedrock function environment
+backend.chatBedrockFunction.addEnvironment(
+  "USER_USAGE_TABLE_NAME",
+  backend.data.resources.tables.userUsage.tableName
+);
+
 // Grant the chat-bedrock-tools function access to the storage bucket (read-only for FAISS indexes)
 backend.storage.resources.bucket.grantRead(
   backend.chatBedrockToolsFunction.resources.lambda
@@ -51,4 +57,16 @@ backend.storage.resources.bucket.grantRead(
 backend.chatBedrockToolsFunction.addEnvironment(
   "STORAGE_BUCKET_NAME",
   backend.storage.resources.bucket.bucketName
+);
+
+// Add userUsage table name to chat-bedrock-tools function environment
+backend.chatBedrockToolsFunction.addEnvironment(
+  "USER_USAGE_TABLE_NAME",
+  backend.data.resources.tables.userUsage.tableName
+);
+
+// Add userUsage table name to test-tool function environment
+backend.testToolFunction.addEnvironment(
+  "USER_USAGE_TABLE_NAME",
+  backend.data.resources.tables.userUsage.tableName
 );

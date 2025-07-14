@@ -20,12 +20,6 @@ dynamodb = boto3.resource("dynamodb")
 
 STORAGE_BUCKET_NAME = os.environ.get("STORAGE_BUCKET_NAME")
 
-# Try to get table names from Amplify's automatic environment variables
-USER_USAGE_TABLE_NAME = (
-    os.environ.get("USER_USAGE_TABLE_NAME")
-    or os.environ.get("AMPLIFY_USERUSAGE_NAME")
-    or os.environ.get("AMPLIFY_USERUSAGE_TABLE_NAME")
-)
 FAISS_INDEX_PREFIX = os.environ.get("FAISS_INDEX_PREFIX", "faiss-indexes")
 EMBEDDING_MODEL_ID = "amazon.titan-embed-text-v1"
 EMBEDDING_DIMENSION = 1536
@@ -34,7 +28,89 @@ EMBEDDING_DIMENSION = 1536
 DEFAULT_DAILY_TOKEN_LIMIT = int(os.environ.get("DAILY_TOKEN_LIMIT", "50000"))
 DEFAULT_DAILY_REQUEST_LIMIT = int(os.environ.get("DAILY_REQUEST_LIMIT", "100"))
 
-user_usage_table = dynamodb.Table(USER_USAGE_TABLE_NAME) if USER_USAGE_TABLE_NAME else None  # type: ignore
+# Global variables for table names and instances
+USER_USAGE_TABLE_NAME = None
+user_usage_table = None
+
+
+def get_table_names():
+    """Discover DynamoDB table names using multiple strategies."""
+    global USER_USAGE_TABLE_NAME, user_usage_table
+
+    if USER_USAGE_TABLE_NAME:
+        return  # Already discovered
+
+    # Strategy 1: Try common environment variable patterns
+    env_patterns = [
+        "USER_USAGE_TABLE_NAME",
+        "AMPLIFY_USERUSAGE_NAME",
+        "AMPLIFY_USERUSAGE_TABLE_NAME",
+        "AMPLIFY_USERUSAGE_TABLENAME",
+    ]
+
+    for pattern in env_patterns:
+        usage_name = os.environ.get(pattern)
+        if usage_name and not USER_USAGE_TABLE_NAME:
+            USER_USAGE_TABLE_NAME = usage_name
+            logger.info(
+                f"Found USER_USAGE_TABLE_NAME: {USER_USAGE_TABLE_NAME} from {pattern}"
+            )
+            break
+
+    # Strategy 2: Search all environment variables for table-like names
+    if not USER_USAGE_TABLE_NAME:
+        logger.info("Searching all environment variables for table names...")
+        for key, value in os.environ.items():
+            if any(pattern in key.lower() for pattern in ["userusage", "user_usage"]):
+                USER_USAGE_TABLE_NAME = value
+                logger.info(
+                    f"Found USER_USAGE_TABLE_NAME: {USER_USAGE_TABLE_NAME} from {key}"
+                )
+                break
+
+    # Strategy 3: Use DynamoDB client to list tables and find matches
+    if not USER_USAGE_TABLE_NAME:
+        try:
+            logger.info(
+                "Attempting to discover table names by listing DynamoDB tables..."
+            )
+            dynamodb_client = boto3.client("dynamodb")
+            response = dynamodb_client.list_tables()
+            table_names = response.get("TableNames", [])
+
+            for table_name in table_names:
+                if any(
+                    pattern in table_name.lower()
+                    for pattern in ["userusage", "user_usage"]
+                ):
+                    USER_USAGE_TABLE_NAME = table_name
+                    logger.info(
+                        f"Discovered USER_USAGE_TABLE_NAME: {USER_USAGE_TABLE_NAME}"
+                    )
+                    break
+
+        except Exception as e:
+            logger.warning(
+                f"Failed to discover table names via DynamoDB client: {str(e)}"
+            )
+
+    # Initialize table instance
+    try:
+        if USER_USAGE_TABLE_NAME:
+            user_usage_table = dynamodb.Table(USER_USAGE_TABLE_NAME)  # type: ignore
+            logger.info(f"Initialized user_usage_table with {USER_USAGE_TABLE_NAME}")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize DynamoDB table: {str(e)}")
+
+    # Log final status
+    logger.info(
+        f"Table discovery complete: USER_USAGE_TABLE_NAME={USER_USAGE_TABLE_NAME}"
+    )
+
+
+# Initialize table names on module load
+get_table_names()
 
 
 def get_embeddings(texts: List[str]) -> List[List[float]]:
@@ -266,6 +342,13 @@ def get_current_period() -> str:
 
 def check_user_usage_limits(user_id: str) -> Tuple[bool, Dict[str, Any]]:
     """Check if user has exceeded their usage limits."""
+    global user_usage_table, USER_USAGE_TABLE_NAME
+
+    # Try to discover table names if not already done
+    if not USER_USAGE_TABLE_NAME or not user_usage_table:
+        logger.info("Re-attempting table discovery for usage limits check...")
+        get_table_names()
+
     if not USER_USAGE_TABLE_NAME or not user_id:
         logger.info("Usage tracking not configured - allowing request")
         return True, {"reason": "Usage tracking not configured"}
@@ -325,6 +408,13 @@ def check_user_usage_limits(user_id: str) -> Tuple[bool, Dict[str, Any]]:
 
 def update_user_usage(user_id: str, usage_data: Dict[str, int]) -> bool:
     """Update user's token usage in DynamoDB."""
+    global user_usage_table, USER_USAGE_TABLE_NAME
+
+    # Try to discover table names if not already done
+    if not USER_USAGE_TABLE_NAME or not user_usage_table:
+        logger.info("Re-attempting table discovery for usage update...")
+        get_table_names()
+
     if not USER_USAGE_TABLE_NAME or not user_id:
         logger.info("Usage tracking not configured - skipping update")
         return True
@@ -352,6 +442,9 @@ def update_user_usage(user_id: str, usage_data: Dict[str, int]) -> bool:
         )
 
         existing_items = response.get("Items", [])
+        logger.info(
+            f"Found {len(existing_items)} existing usage records for user {user_id} in period {current_period}"
+        )
 
         if existing_items:
             # Update the most recent existing record
@@ -389,6 +482,7 @@ def update_user_usage(user_id: str, usage_data: Dict[str, int]) -> bool:
                     "lastRequestAt": current_time,
                     "createdAt": current_time,
                     "updatedAt": current_time,
+                    "owner": user_id,  # Set owner for Amplify authorization
                 }
             )
 
@@ -512,9 +606,12 @@ def handler(event, context):
 
         # Update user usage tracking after successful response
         if user_id and usage:
+            logger.info(f"Updating usage for user {user_id} with data: {usage}")
             update_success = update_user_usage(user_id, usage)
             if not update_success:
                 logger.warning(f"Failed to update usage for user {user_id}")
+            else:
+                logger.info(f"Successfully updated usage for user {user_id}")
 
         # Include usage information in response
         response_data = {

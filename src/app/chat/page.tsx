@@ -275,6 +275,13 @@ export default function ChatPage() {
 
       const usageRecords = result.data || [];
 
+      console.log("📊 [ChatPage] Raw usage records:", usageRecords);
+      console.log("📊 [ChatPage] Current period:", currentPeriod);
+      console.log(
+        "📊 [ChatPage] Number of records found:",
+        usageRecords.length
+      );
+
       // Calculate totals from all records for current period
       const totalTokens = usageRecords.reduce(
         (sum, record) => sum + (record.totalTokens || 0),
@@ -284,6 +291,17 @@ export default function ChatPage() {
         (sum, record) => sum + (record.requestCount || 0),
         0
       );
+
+      console.log("📊 [ChatPage] Calculated totals:", {
+        totalTokens,
+        totalRequests,
+        recordBreakdown: usageRecords.map((r) => ({
+          id: r.id,
+          tokens: r.totalTokens,
+          requests: r.requestCount,
+          period: r.period,
+        })),
+      });
 
       // Get the most recent lastRequestAt
       const lastRequestTimes = usageRecords

@@ -84,6 +84,6 @@ export const chatBedrockFunction = defineFunction(
     return fn;
   },
   {
-    resourceGroupName: "chat",
+    resourceGroupName: "data",
   }
 );
