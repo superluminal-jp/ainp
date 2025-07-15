@@ -591,7 +591,7 @@ def update_user_usage(user_id: str, usage_data: Dict[str, Any]) -> bool:
         total_tokens = usage_data.get("totalTokens", input_tokens + output_tokens)
 
         # Create a new usage record with the composite id
-        response = user_usage_table.put_item(
+        user_usage_table.put_item(
             Item={
                 "id": record_id,
                 "userId": user_id,

@@ -3,7 +3,6 @@ import { chatBedrockFunction } from "../functions/chat-bedrock/resource";
 import { chatBedrockToolsFunction } from "../functions/chat-bedrock-tools/resource";
 import { embedFilesFunction } from "../functions/embed-files/resource";
 import { testToolFunction } from "../functions/test-tool/resource";
-import { queryBedrockUsageFunction } from "../functions/query-bedrock-usage/resource";
 
 const schema = a.schema({
   // Message structure for chat
@@ -58,21 +57,6 @@ const schema = a.schema({
     timestamp: a.string(),
     validation_errors: a.json(),
     line_number: a.integer(),
-  }),
-
-  // Response structure for usage query
-  UsageResponse: a.customType({
-    currentTokens: a.integer().required(),
-    currentRequests: a.integer().required(),
-    inputTokens: a.integer().required(),
-    outputTokens: a.integer().required(),
-    tokenLimit: a.integer().required(),
-    requestLimit: a.integer().required(),
-    period: a.string().required(),
-    limitExceeded: a.boolean().required(),
-    tokenLimitExceeded: a.boolean().required(),
-    requestLimitExceeded: a.boolean().required(),
-    error: a.string(),
   }),
 
   // Response structure for usage update
@@ -166,7 +150,7 @@ const schema = a.schema({
 
   // User token usage tracking table - stores daily usage statistics
   userUsage: a
-    .model({ 
+    .model({
       id: a.id().required(),
       userId: a.string().required(),
       period: a.string().required(), // Format: YYYY-MM-DD
@@ -238,16 +222,6 @@ const schema = a.schema({
     .returns(a.ref("EmbedResponse"))
     .authorization((allow) => [allow.authenticated()])
     .handler(a.handler.function(embedFilesFunction)),
-
-  // Query Bedrock usage from S3 and CloudWatch logs
-  queryBedrockUsage: a
-    .query()
-    .arguments({
-      period: a.string(), // Optional: defaults to current date
-    })
-    .returns(a.ref("UsageResponse"))
-    .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.function(queryBedrockUsageFunction)),
 });
 
 export type Schema = ClientSchema<typeof schema>;

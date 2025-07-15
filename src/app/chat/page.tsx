@@ -83,10 +83,12 @@ interface SchemaProperty {
   arrayItemType: SchemaArrayItemType;
 }
 
-// Define usage data type
+// Define usage data type based on userUsage model
 interface UsageData {
-  currentTokens: number;
-  currentRequests: number;
+  id?: string;
+  userId?: string;
+  totalTokens: number;
+  totalRequests: number;
   inputTokens: number;
   outputTokens: number;
   tokenLimit: number;
@@ -95,6 +97,7 @@ interface UsageData {
   limitExceeded: boolean;
   tokenLimitExceeded: boolean;
   requestLimitExceeded: boolean;
+  lastUpdated?: Date;
   error?: string;
 }
 
@@ -264,7 +267,13 @@ export default function ChatPage() {
     setIsLoadingUsage(true);
     try {
       const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD format
-      const result = await client.queries.queryBedrockUsage({ period: today });
+
+      // Query userUsage model for current user and today's period
+      const result = await client.models.userUsage.list({
+        filter: {
+          period: { eq: today },
+        },
+      });
 
       if (result.errors && result.errors.length > 0) {
         console.error(
@@ -274,28 +283,61 @@ export default function ChatPage() {
         throw new Error(result.errors.map((e) => e.message).join(", "));
       }
 
-      if (result.data) {
+      if (result.data && result.data.length > 0) {
+        // Get the first (and should be only) usage record for today
+        const userUsageRecord = result.data[0];
+
         const usage: UsageData = {
-          currentTokens: result.data.currentTokens,
-          currentRequests: result.data.currentRequests,
-          inputTokens: result.data.inputTokens,
-          outputTokens: result.data.outputTokens,
-          tokenLimit: result.data.tokenLimit,
-          requestLimit: result.data.requestLimit,
-          period: result.data.period,
-          limitExceeded: result.data.limitExceeded,
-          tokenLimitExceeded: result.data.tokenLimitExceeded,
-          requestLimitExceeded: result.data.requestLimitExceeded,
-          error: result.data.error || undefined,
+          id: userUsageRecord.id,
+          userId: userUsageRecord.userId,
+          totalTokens: userUsageRecord.totalTokens || 0,
+          totalRequests: userUsageRecord.totalRequests || 0,
+          inputTokens: userUsageRecord.inputTokens || 0,
+          outputTokens: userUsageRecord.outputTokens || 0,
+          tokenLimit: userUsageRecord.tokenLimit || 50000,
+          requestLimit: userUsageRecord.requestLimit || 100,
+          period: userUsageRecord.period,
+          limitExceeded:
+            (userUsageRecord.totalTokens || 0) >=
+              (userUsageRecord.tokenLimit || 50000) ||
+            (userUsageRecord.totalRequests || 0) >=
+              (userUsageRecord.requestLimit || 100),
+          tokenLimitExceeded:
+            (userUsageRecord.totalTokens || 0) >=
+            (userUsageRecord.tokenLimit || 50000),
+          requestLimitExceeded:
+            (userUsageRecord.totalRequests || 0) >=
+            (userUsageRecord.requestLimit || 100),
+          lastUpdated: userUsageRecord.lastUpdated
+            ? new Date(userUsageRecord.lastUpdated)
+            : undefined,
         };
 
         setUsageData(usage);
         setLastUsageUpdate(new Date());
         console.log("✅ [ChatPage] Usage data updated:", {
-          tokens: `${usage.currentTokens}/${usage.tokenLimit}`,
-          requests: `${usage.currentRequests}/${usage.requestLimit}`,
+          tokens: `${usage.totalTokens}/${usage.tokenLimit}`,
+          requests: `${usage.totalRequests}/${usage.requestLimit}`,
           limitExceeded: usage.limitExceeded,
         });
+      } else {
+        // No usage record found for today, create default
+        const usage: UsageData = {
+          totalTokens: 0,
+          totalRequests: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          tokenLimit: 50000,
+          requestLimit: 100,
+          period: today,
+          limitExceeded: false,
+          tokenLimitExceeded: false,
+          requestLimitExceeded: false,
+        };
+
+        setUsageData(usage);
+        setLastUsageUpdate(new Date());
+        console.log("✅ [ChatPage] No usage data found, using defaults");
       }
     } catch (error) {
       console.error("❌ [ChatPage] Failed to fetch usage data:", error);
@@ -1037,11 +1079,11 @@ export default function ChatPage() {
     }
 
     const tokenUsagePercent = Math.min(
-      (usageData.currentTokens / usageData.tokenLimit) * 100,
+      (usageData.totalTokens / usageData.tokenLimit) * 100,
       100
     );
     const requestUsagePercent = Math.min(
-      (usageData.currentRequests / usageData.requestLimit) * 100,
+      (usageData.totalRequests / usageData.requestLimit) * 100,
       100
     );
 
@@ -1077,7 +1119,7 @@ export default function ChatPage() {
               <span
                 className={`font-mono ${usageData.tokenLimitExceeded ? "text-red-500" : "text-foreground"}`}
               >
-                {usageData.currentTokens.toLocaleString()}/
+                {usageData.totalTokens.toLocaleString()}/
                 {usageData.tokenLimit.toLocaleString()}
               </span>
             </div>
@@ -1091,7 +1133,7 @@ export default function ChatPage() {
               <span
                 className={`font-mono ${usageData.requestLimitExceeded ? "text-red-500" : "text-foreground"}`}
               >
-                {usageData.currentRequests}/{usageData.requestLimit}
+                {usageData.totalRequests}/{usageData.requestLimit}
               </span>
             </div>
             <Progress value={requestUsagePercent} className="h-1" />

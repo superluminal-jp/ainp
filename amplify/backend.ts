@@ -8,7 +8,6 @@ import { embedFilesFunction } from "./functions/embed-files/resource";
 import { chatBedrockToolsFunction } from "./functions/chat-bedrock-tools/resource";
 import { testToolFunction } from "./functions/test-tool/resource";
 import { configureBedrockLoggingFunction } from "./functions/configure-bedrock-logging/resource";
-import { queryBedrockUsageFunction } from "./functions/query-bedrock-usage/resource";
 import { Effect, PolicyStatement, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 
 /**
@@ -24,7 +23,6 @@ const backend = defineBackend({
   chatBedrockToolsFunction,
   testToolFunction,
   configureBedrockLoggingFunction,
-  queryBedrockUsageFunction,
 });
 
 // Grant the embed-files function access to the storage bucket
@@ -122,20 +120,6 @@ backend.configureBedrockLoggingFunction.addEnvironment(
   bedrockLoggingResources.bedrockCloudWatchRole.roleArn
 );
 
-// Configure query Bedrock usage function environment variables
-backend.queryBedrockUsageFunction.addEnvironment(
-  "BEDROCK_LOGGING_BUCKET",
-  backend.bedrockLoggingStorage.resources.bucket.bucketName
-);
-backend.queryBedrockUsageFunction.addEnvironment(
-  "BEDROCK_LOG_GROUP_NAME",
-  bedrockLoggingResources.bedrockLogGroup.logGroupName
-);
-backend.queryBedrockUsageFunction.addEnvironment(
-  "AWS_ACCOUNT_ID",
-  backend.stack.account
-);
-
 // Grant permissions for Bedrock logging configuration
 backend.configureBedrockLoggingFunction.resources.lambda.addToRolePolicy(
   new PolicyStatement({
@@ -146,25 +130,5 @@ backend.configureBedrockLoggingFunction.resources.lambda.addToRolePolicy(
       "bedrock:DeleteModelInvocationLoggingConfiguration",
     ],
     resources: ["*"],
-  })
-);
-
-// Grant permissions for querying Bedrock usage
-backend.queryBedrockUsageFunction.resources.lambda.addToRolePolicy(
-  new PolicyStatement({
-    effect: Effect.ALLOW,
-    actions: [
-      "s3:GetObject",
-      "s3:ListBucket",
-      "logs:StartQuery",
-      "logs:GetQueryResults",
-      "logs:StopQuery",
-    ],
-    resources: [
-      backend.bedrockLoggingStorage.resources.bucket.bucketArn,
-      `${backend.bedrockLoggingStorage.resources.bucket.bucketArn}/*`,
-      bedrockLoggingResources.bedrockLogGroup.logGroupArn,
-      `${bedrockLoggingResources.bedrockLogGroup.logGroupArn}:*`,
-    ],
   })
 );
