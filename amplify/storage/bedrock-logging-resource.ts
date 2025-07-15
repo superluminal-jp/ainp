@@ -6,7 +6,7 @@ import { Stack } from "aws-cdk-lib";
 export function createBedrockLoggingResources(stack: Stack) {
   // Create CloudWatch log group for Bedrock logging with unique name
   const bedrockLogGroup = new LogGroup(stack, "BedrockLoggingLogGroup", {
-    logGroupName: `/aws/bedrock/modelinvocations-${stack.stackId.split("/").pop()}`,
+    logGroupName: `/aws/bedrock/modelinvocations-${stack.stackName}`,
     retention: RetentionDays.ONE_MONTH,
     removalPolicy: undefined, // Will use default removal policy
   });
