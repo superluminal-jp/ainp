@@ -4,9 +4,9 @@ import { Role, PolicyDocument } from "aws-cdk-lib/aws-iam";
 import { Stack } from "aws-cdk-lib";
 
 export function createBedrockLoggingResources(stack: Stack) {
-  // Create CloudWatch log group for Bedrock logging
+  // Create CloudWatch log group for Bedrock logging with unique name
   const bedrockLogGroup = new LogGroup(stack, "BedrockLoggingLogGroup", {
-    logGroupName: "/aws/bedrock/modelinvocations",
+    logGroupName: `/aws/bedrock/modelinvocations-${stack.stackId.split("/").pop()}`,
     retention: RetentionDays.ONE_MONTH,
     removalPolicy: undefined, // Will use default removal policy
   });
@@ -21,7 +21,7 @@ export function createBedrockLoggingResources(stack: Stack) {
             effect: Effect.ALLOW,
             actions: ["logs:CreateLogStream", "logs:PutLogEvents"],
             resources: [
-              `arn:aws:logs:${stack.region}:${stack.account}:log-group:/aws/bedrock/modelinvocations:log-stream:aws/bedrock/modelinvocations`,
+              `${bedrockLogGroup.logGroupArn}:log-stream:aws/bedrock/modelinvocations`,
             ],
           }),
         ],
