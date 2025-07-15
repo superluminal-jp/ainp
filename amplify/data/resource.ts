@@ -165,7 +165,7 @@ const schema = a.schema({
       updatedAt: a.datetime(),
     })
     .authorization((allow) => [
-      allow.owner().to(["read", "create", "update", "delete"]),
+      allow.authenticated().to(["read", "create", "update", "delete"]),
     ]),
 
   // User token usage tracking - stored in DynamoDB with daily limits

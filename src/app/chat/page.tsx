@@ -101,6 +101,13 @@ interface UsageData {
   error?: string;
 }
 
+// Define API usage data interface
+interface ApiUsageData {
+  totalTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
 import type { Schema } from "../../../amplify/data/resource";
 import { generateClient } from "aws-amplify/data";
 import { useAuthenticator } from "@aws-amplify/ui-react";
@@ -265,7 +272,7 @@ export default function ChatPage() {
 
   // Function to update usage data after API calls
   const updateUsageData = useCallback(
-    async (apiUsage?: any) => {
+    async (apiUsage?: ApiUsageData) => {
       if (!apiUsage) return;
 
       console.log(
@@ -275,62 +282,181 @@ export default function ChatPage() {
 
       try {
         const today = new Date().toISOString().split("T")[0];
+        const currentUserId = user?.userId || user?.username || "unknown";
 
-        // Try to find existing record for today
+        // Try to find existing record for today and this user
         const existingResult = await client.models.userUsage.list({
           filter: {
-            period: { eq: today },
+            and: [{ period: { eq: today } }, { userId: { eq: currentUserId } }],
           },
+          // Only select fields that don't cause serialization issues
+          selectionSet: [
+            "id",
+            "userId",
+            "period",
+            "totalTokens",
+            "totalRequests",
+            "inputTokens",
+            "outputTokens",
+            "tokenLimit",
+            "requestLimit",
+          ],
         });
-        console.log("🔄 [ChatPage] Existing result:", existingResult);
-        console.log("[ChatPage] Existing result:", await client.models.userUsage.list());
+
+        console.log("🔄 [ChatPage] Existing records check:", {
+          found: existingResult.data?.length || 0,
+          hasErrors: !!(
+            existingResult.errors && existingResult.errors.length > 0
+          ),
+        });
+
+        // Handle serialization errors gracefully
+        if (existingResult.errors && existingResult.errors.length > 0) {
+          const nonSerializationErrors = existingResult.errors.filter(
+            (error) => {
+              if (
+                !error ||
+                typeof error !== "object" ||
+                !("message" in error)
+              ) {
+                return false;
+              }
+              const message = String(
+                (error as unknown as Record<string, unknown>).message
+              );
+              return (
+                !message.includes("Can't serialize") &&
+                !message.includes("DateTime")
+              );
+            }
+          );
+          if (nonSerializationErrors.length > 0) {
+            console.error(
+              "❌ [ChatPage] Non-serialization errors:",
+              nonSerializationErrors
+            );
+            throw new Error(
+              nonSerializationErrors
+                .map((e) =>
+                  String((e as unknown as Record<string, unknown>).message)
+                )
+                .join(", ")
+            );
+          }
+        }
 
         if (existingResult.data && existingResult.data.length > 0) {
-          // Update existing record
-          const existingRecord = existingResult.data[0];
-          const updatedRecord = await client.models.userUsage.update({
-            id: existingRecord.id,
-            totalTokens:
-              (existingRecord.totalTokens || 0) +
-              (apiUsage.totalTokens ||
-                apiUsage.inputTokens + apiUsage.outputTokens ||
-                0),
-            totalRequests: (existingRecord.totalRequests || 0) + 1,
-            inputTokens:
-              (existingRecord.inputTokens || 0) + (apiUsage.inputTokens || 0),
-            outputTokens:
-              (existingRecord.outputTokens || 0) + (apiUsage.outputTokens || 0),
-            lastUpdated: new Date().toISOString(),
+          // If multiple records exist, consolidate into the first one and delete the rest
+          const recordsToUpdate = [...existingResult.data];
+          const primaryRecord = recordsToUpdate[0];
+
+          // Calculate totals from all existing records plus new usage
+          const totalTokensFromExisting = recordsToUpdate.reduce(
+            (sum, record) => sum + (record.totalTokens || 0),
+            0
+          );
+          const totalRequestsFromExisting = recordsToUpdate.reduce(
+            (sum, record) => sum + (record.totalRequests || 0),
+            0
+          );
+          const inputTokensFromExisting = recordsToUpdate.reduce(
+            (sum, record) => sum + (record.inputTokens || 0),
+            0
+          );
+          const outputTokensFromExisting = recordsToUpdate.reduce(
+            (sum, record) => sum + (record.outputTokens || 0),
+            0
+          );
+
+          const apiTotalTokens = apiUsage.totalTokens || 0;
+          const apiInputTokens = apiUsage.inputTokens || 0;
+          const apiOutputTokens = apiUsage.outputTokens || 0;
+
+          const newTotalTokens =
+            totalTokensFromExisting +
+            (apiTotalTokens || apiInputTokens + apiOutputTokens || 0);
+          const newTotalRequests = totalRequestsFromExisting + 1;
+          const newInputTokens = inputTokensFromExisting + apiInputTokens;
+          const newOutputTokens = outputTokensFromExisting + apiOutputTokens;
+
+          // Update the primary record with consolidated data
+          await client.models.userUsage.update({
+            id: primaryRecord.id,
+            totalTokens: newTotalTokens,
+            totalRequests: newTotalRequests,
+            inputTokens: newInputTokens,
+            outputTokens: newOutputTokens,
+            // Don't update lastUpdated due to serialization issues
           });
 
-          console.log(
-            "✅ [ChatPage] Updated existing usage record:",
-            updatedRecord
-          );
+          console.log("✅ [ChatPage] Updated primary usage record:", {
+            id: primaryRecord.id,
+            tokens: newTotalTokens,
+            requests: newTotalRequests,
+            duplicatesFound: recordsToUpdate.length - 1,
+          });
+
+          // Clean up duplicate records
+          if (recordsToUpdate.length > 1) {
+            console.log(
+              `🧹 [ChatPage] Cleaning up ${recordsToUpdate.length - 1} duplicate records...`
+            );
+            for (let i = 1; i < recordsToUpdate.length; i++) {
+              try {
+                await client.models.userUsage.delete({
+                  id: recordsToUpdate[i].id,
+                });
+                console.log(
+                  `✅ [ChatPage] Deleted duplicate record: ${recordsToUpdate[i].id}`
+                );
+              } catch (deleteError) {
+                console.warn(
+                  `⚠️ [ChatPage] Failed to delete duplicate record ${recordsToUpdate[i].id}:`,
+                  deleteError
+                );
+              }
+            }
+          }
         } else {
           // Create new record for today
           const newRecord = await client.models.userUsage.create({
-            userId: user?.userId || user?.username || "unknown",
+            userId: currentUserId,
             period: today,
             totalTokens:
-              apiUsage.totalTokens ||
-              apiUsage.inputTokens + apiUsage.outputTokens ||
+              (apiUsage.totalTokens ?? 0) ||
+              (apiUsage.inputTokens ?? 0) + (apiUsage.outputTokens ?? 0) ||
               0,
             totalRequests: 1,
             inputTokens: apiUsage.inputTokens || 0,
             outputTokens: apiUsage.outputTokens || 0,
             tokenLimit: 50000,
             requestLimit: 100,
-            lastUpdated: new Date().toISOString(),
+            // Don't set lastUpdated due to serialization issues
           });
 
-          console.log("✅ [ChatPage] Created new usage record:", newRecord);
+          console.log("✅ [ChatPage] Created new usage record:", {
+            id: newRecord.data?.id,
+            tokens:
+              (apiUsage.totalTokens ?? 0) ||
+              (apiUsage.inputTokens ?? 0) + (apiUsage.outputTokens ?? 0) ||
+              0,
+            requests: 1,
+          });
         }
 
-        // Refresh the display
-        fetchUsageData();
+        // Note: Display will be refreshed on next fetchUsageData call
+        console.log("✅ [ChatPage] Usage data update completed");
       } catch (error) {
         console.error("❌ [ChatPage] Failed to update usage data:", error);
+        // Don't show error toast for serialization issues as they're handled gracefully
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        if (
+          !errorMessage.includes("serialize") &&
+          !errorMessage.includes("DateTime")
+        ) {
+          toast.error("Failed to update usage tracking");
+        }
       }
     },
     [user]
@@ -342,60 +468,100 @@ export default function ChatPage() {
     setIsLoadingUsage(true);
     try {
       const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD format
+      const currentUserId = user?.userId || user?.username || "unknown";
 
       // Query userUsage model for current user and today's period
       const result = await client.models.userUsage.list({
         filter: {
-          period: { eq: today },
+          and: [{ period: { eq: today } }, { userId: { eq: currentUserId } }],
         },
+        // Only select fields that don't cause serialization issues
+        selectionSet: [
+          "id",
+          "userId",
+          "period",
+          "totalTokens",
+          "totalRequests",
+          "inputTokens",
+          "outputTokens",
+          "tokenLimit",
+          "requestLimit",
+        ],
       });
-      console.log("🔄 [ChatPage] Usage data:", result);
-      console.log(
-        "🔄 [ChatPage] Usage data:",
-        await client.models.userUsage.list()
-      );
+
+      console.log("🔄 [ChatPage] Usage data result:", {
+        hasData: !!result.data,
+        dataLength: result.data?.length || 0,
+        hasErrors: !!(result.errors && result.errors.length > 0),
+        errorCount: result.errors?.length || 0,
+      });
 
       if (result.errors && result.errors.length > 0) {
         console.error(
           "❌ [ChatPage] Error fetching usage data:",
           result.errors
         );
-        throw new Error(result.errors.map((e) => e.message).join(", "));
+        // Don't throw error for serialization issues, just log them
+        const nonSerializationErrors = result.errors.filter(
+          (error) =>
+            error &&
+            typeof error === "object" &&
+            "message" in error &&
+            !String(error).includes("Can't serialize") &&
+            !String(error).includes("DateTime")
+        );
+        if (nonSerializationErrors.length > 0) {
+          throw new Error(
+            nonSerializationErrors.map((e) => String(e)).join(", ")
+          );
+        }
       }
 
       if (result.data && result.data.length > 0) {
-        // Get the first (and should be only) usage record for today
-        const userUsageRecord = result.data[0];
+        // Consolidate all records for today into a single usage summary
+        const totalTokens = result.data.reduce(
+          (sum, record) => sum + (record.totalTokens || 0),
+          0
+        );
+        const totalRequests = result.data.reduce(
+          (sum, record) => sum + (record.totalRequests || 0),
+          0
+        );
+        const inputTokens = result.data.reduce(
+          (sum, record) => sum + (record.inputTokens || 0),
+          0
+        );
+        const outputTokens = result.data.reduce(
+          (sum, record) => sum + (record.outputTokens || 0),
+          0
+        );
+
+        // Use the first record for metadata
+        const firstRecord = result.data[0];
 
         const usage: UsageData = {
-          id: userUsageRecord.id,
-          userId: userUsageRecord.userId,
-          totalTokens: userUsageRecord.totalTokens || 0,
-          totalRequests: userUsageRecord.totalRequests || 0,
-          inputTokens: userUsageRecord.inputTokens || 0,
-          outputTokens: userUsageRecord.outputTokens || 0,
-          tokenLimit: userUsageRecord.tokenLimit || 50000,
-          requestLimit: userUsageRecord.requestLimit || 100,
-          period: userUsageRecord.period,
+          id: firstRecord.id,
+          userId: firstRecord.userId,
+          totalTokens,
+          totalRequests,
+          inputTokens,
+          outputTokens,
+          tokenLimit: firstRecord.tokenLimit || 50000,
+          requestLimit: firstRecord.requestLimit || 100,
+          period: firstRecord.period,
           limitExceeded:
-            (userUsageRecord.totalTokens || 0) >=
-              (userUsageRecord.tokenLimit || 50000) ||
-            (userUsageRecord.totalRequests || 0) >=
-              (userUsageRecord.requestLimit || 100),
-          tokenLimitExceeded:
-            (userUsageRecord.totalTokens || 0) >=
-            (userUsageRecord.tokenLimit || 50000),
+            totalTokens >= (firstRecord.tokenLimit || 50000) ||
+            totalRequests >= (firstRecord.requestLimit || 100),
+          tokenLimitExceeded: totalTokens >= (firstRecord.tokenLimit || 50000),
           requestLimitExceeded:
-            (userUsageRecord.totalRequests || 0) >=
-            (userUsageRecord.requestLimit || 100),
-          lastUpdated: userUsageRecord.lastUpdated
-            ? new Date(userUsageRecord.lastUpdated)
-            : undefined,
+            totalRequests >= (firstRecord.requestLimit || 100),
+          lastUpdated: new Date(), // Use current time since we can't rely on stored timestamps
         };
 
         setUsageData(usage);
         setLastUsageUpdate(new Date());
-        console.log("✅ [ChatPage] Usage data updated:", {
+        console.log("✅ [ChatPage] Usage data consolidated:", {
+          recordCount: result.data.length,
           tokens: `${usage.totalTokens}/${usage.tokenLimit}`,
           requests: `${usage.totalRequests}/${usage.requestLimit}`,
           limitExceeded: usage.limitExceeded,
@@ -422,10 +588,26 @@ export default function ChatPage() {
     } catch (error) {
       console.error("❌ [ChatPage] Failed to fetch usage data:", error);
       toast.error("Failed to load usage data");
+
+      // Set fallback usage data so UI doesn't break
+      const usage: UsageData = {
+        totalTokens: 0,
+        totalRequests: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        tokenLimit: 50000,
+        requestLimit: 100,
+        period: new Date().toISOString().split("T")[0],
+        limitExceeded: false,
+        tokenLimitExceeded: false,
+        requestLimitExceeded: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+      setUsageData(usage);
     } finally {
       setIsLoadingUsage(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     // Load all data from Amplify
@@ -1035,7 +1217,12 @@ export default function ChatPage() {
         );
 
         // Update usage data after successful response
-        await updateUsageData(responseData.usage);
+        if (responseData.usage && typeof responseData.usage === "object") {
+          await updateUsageData(responseData.usage as ApiUsageData);
+        }
+
+        // Refresh usage display
+        fetchUsageData();
       } else {
         console.error("❌ [ChatPage] No response data received from Bedrock");
         throw new Error("No response data received");
