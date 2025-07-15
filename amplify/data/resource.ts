@@ -166,7 +166,7 @@ const schema = a.schema({
 
   // User token usage tracking table - stores daily usage statistics
   userUsage: a
-    .model({
+    .model({ 
       id: a.id().required(),
       userId: a.string().required(),
       period: a.string().required(), // Format: YYYY-MM-DD

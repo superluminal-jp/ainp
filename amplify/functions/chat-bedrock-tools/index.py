@@ -489,10 +489,8 @@ def get_user_usage(user_id: str) -> Dict[str, Any]:
 
     try:
         period = get_current_period()
-        # Create composite ID from userId and period
-        composite_id = f"{user_id}#{period}"
 
-        response = user_usage_table.get_item(Key={"id": composite_id})
+        response = user_usage_table.get_item(Key={"userId": user_id, "period": period})
 
         if "Item" in response:
             item = response["Item"]
@@ -558,9 +556,6 @@ def update_user_usage(user_id: str, usage_data: Dict[str, Any]) -> bool:
         period = get_current_period()
         current_time = datetime.now().isoformat()
 
-        # Create composite ID from userId and period
-        composite_id = f"{user_id}#{period}"
-
         # Extract usage data
         input_tokens = usage_data.get("inputTokens", 0)
         output_tokens = usage_data.get("outputTokens", 0)
@@ -568,15 +563,13 @@ def update_user_usage(user_id: str, usage_data: Dict[str, Any]) -> bool:
 
         # Update or create usage record
         response = user_usage_table.update_item(
-            Key={"id": composite_id},
+            Key={"userId": user_id, "period": period},
             UpdateExpression="""
                 ADD totalTokens :total_tokens,
                     totalRequests :one,
                     inputTokens :input_tokens,
                     outputTokens :output_tokens
-                SET userId = :user_id,
-                    period = :period,
-                    lastUpdated = :last_updated,
+                SET lastUpdated = :last_updated,
                     updatedAt = :updated_at
             """,
             ExpressionAttributeValues={
@@ -584,8 +577,6 @@ def update_user_usage(user_id: str, usage_data: Dict[str, Any]) -> bool:
                 ":one": 1,
                 ":input_tokens": input_tokens,
                 ":output_tokens": output_tokens,
-                ":user_id": user_id,
-                ":period": period,
                 ":last_updated": current_time,
                 ":updated_at": current_time,
             },
