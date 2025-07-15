@@ -11,13 +11,19 @@ logger.setLevel(logging.INFO)
 
 dynamodb = boto3.resource("dynamodb")
 
-# Try to get table names from Amplify's automatic environment variables
-TOOLSPECS_TABLE_NAME = (
-    os.environ.get("TOOLSPECS_TABLE_NAME")
-    or os.environ.get("AMPLIFY_TOOLSPECS_NAME")
-    or os.environ.get("AMPLIFY_TOOLSPECS_TABLE_NAME")
-)
-toolspecs_table = dynamodb.Table(TOOLSPECS_TABLE_NAME) if TOOLSPECS_TABLE_NAME else None  # type: ignore
+# Global variables for table names and instances
+TOOLSPECS_TABLE_NAME = os.environ.get("TOOLSPECS_TABLE_NAME")
+toolspecs_table = None
+
+# Initialize table on module load
+if TOOLSPECS_TABLE_NAME:
+    try:
+        toolspecs_table = dynamodb.Table(TOOLSPECS_TABLE_NAME)  # type: ignore
+        logger.info(f"Initialized toolspecs_table: {TOOLSPECS_TABLE_NAME}")
+    except Exception as e:
+        logger.error(f"Failed to initialize toolspecs_table: {str(e)}")
+else:
+    logger.warning("TOOLSPECS_TABLE_NAME environment variable not set")
 
 
 def install_tool_requirements(tool_name: str, requirements: str) -> bool:
