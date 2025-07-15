@@ -267,6 +267,7 @@ export default function ChatPage() {
     setIsLoadingUsage(true);
     try {
       const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD format
+      console.log("🔄 [ChatPage] Today:", today);
 
       // Query userUsage model for current user and today's period
       const result = await client.models.userUsage.list({
