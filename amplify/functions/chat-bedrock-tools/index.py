@@ -489,8 +489,10 @@ def get_user_usage(user_id: str) -> Dict[str, Any]:
 
     try:
         period = get_current_period()
+        logger.info(f"Getting user usage for {user_id} in period {period}")
 
         response = user_usage_table.get_item(Key={"userId": user_id, "period": period})
+        logger.info(f"user_usage_table.get_item response: {response}")
 
         if "Item" in response:
             item = response["Item"]
@@ -530,6 +532,7 @@ def get_user_usage(user_id: str) -> Dict[str, Any]:
 def check_user_usage_limits(user_id: str) -> Tuple[bool, Dict[str, Any]]:
     """Check if user has exceeded usage limits."""
     usage_info = get_user_usage(user_id)
+    logger.info(f"Usage info: {usage_info}")
 
     token_limit_exceeded = usage_info["totalTokens"] >= usage_info["tokenLimit"]
     request_limit_exceeded = usage_info["totalRequests"] >= usage_info["requestLimit"]
@@ -630,6 +633,7 @@ def handler(event, context):
         user_id = get_user_id_from_event(event)
         if not user_id:
             user_id = "anonymous"
+        logger.info(f"User ID: {user_id}")
 
         # Check user usage limits before processing
         within_limits, usage_info = check_user_usage_limits(user_id)
@@ -643,6 +647,7 @@ def handler(event, context):
                 "usageLimitExceeded": True,
                 "usageInfo": usage_info,
             }
+        logger.info(f"Usage info: {usage_info}")
 
         arguments = event.get("arguments", {})
         if not isinstance(arguments, dict):
@@ -808,6 +813,7 @@ def handler(event, context):
 
         # Get updated usage info after tracking
         updated_usage_info = get_user_usage(user_id)
+        logger.info(f"Updated usage info: {updated_usage_info}")
 
         # Include usage information in response
         response_data = {
