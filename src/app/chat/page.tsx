@@ -103,6 +103,7 @@ interface UsageData {
 
 import type { Schema } from "../../../amplify/data/resource";
 import { generateClient } from "aws-amplify/data";
+import { useAuthenticator } from "@aws-amplify/ui-react";
 
 const client = generateClient<Schema>();
 
@@ -122,6 +123,7 @@ const AVAILABLE_MODELS = [
 
 export default function ChatPage() {
   const { setHeaderProps } = useHeader();
+  const { user } = useAuthenticator((context) => [context.user]);
   const [systemPrompt, setSystemPrompt] = useState<string>("default");
   const [selectedDatabases, setSelectedDatabases] = useState<string[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string>("none");
@@ -261,13 +263,85 @@ export default function ChatPage() {
   const [isLoadingUsage, setIsLoadingUsage] = useState(false);
   const [lastUsageUpdate, setLastUsageUpdate] = useState<Date | null>(null);
 
+  // Function to update usage data after API calls
+  const updateUsageData = useCallback(
+    async (apiUsage?: any) => {
+      if (!apiUsage) return;
+
+      console.log(
+        "📊 [ChatPage] Updating usage data with API response:",
+        apiUsage
+      );
+
+      try {
+        const today = new Date().toISOString().split("T")[0];
+
+        // Try to find existing record for today
+        const existingResult = await client.models.userUsage.list({
+          filter: {
+            period: { eq: today },
+          },
+        });
+        console.log("🔄 [ChatPage] Existing result:", existingResult);
+        console.log("[ChatPage] Existing result:", await client.models.userUsage.list());
+
+        if (existingResult.data && existingResult.data.length > 0) {
+          // Update existing record
+          const existingRecord = existingResult.data[0];
+          const updatedRecord = await client.models.userUsage.update({
+            id: existingRecord.id,
+            totalTokens:
+              (existingRecord.totalTokens || 0) +
+              (apiUsage.totalTokens ||
+                apiUsage.inputTokens + apiUsage.outputTokens ||
+                0),
+            totalRequests: (existingRecord.totalRequests || 0) + 1,
+            inputTokens:
+              (existingRecord.inputTokens || 0) + (apiUsage.inputTokens || 0),
+            outputTokens:
+              (existingRecord.outputTokens || 0) + (apiUsage.outputTokens || 0),
+            lastUpdated: new Date().toISOString(),
+          });
+
+          console.log(
+            "✅ [ChatPage] Updated existing usage record:",
+            updatedRecord
+          );
+        } else {
+          // Create new record for today
+          const newRecord = await client.models.userUsage.create({
+            userId: user?.userId || user?.username || "unknown",
+            period: today,
+            totalTokens:
+              apiUsage.totalTokens ||
+              apiUsage.inputTokens + apiUsage.outputTokens ||
+              0,
+            totalRequests: 1,
+            inputTokens: apiUsage.inputTokens || 0,
+            outputTokens: apiUsage.outputTokens || 0,
+            tokenLimit: 50000,
+            requestLimit: 100,
+            lastUpdated: new Date().toISOString(),
+          });
+
+          console.log("✅ [ChatPage] Created new usage record:", newRecord);
+        }
+
+        // Refresh the display
+        fetchUsageData();
+      } catch (error) {
+        console.error("❌ [ChatPage] Failed to update usage data:", error);
+      }
+    },
+    [user]
+  );
+
   // Function to fetch usage data
   const fetchUsageData = useCallback(async () => {
     console.log("📊 [ChatPage] Fetching usage data...");
     setIsLoadingUsage(true);
     try {
       const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD format
-      console.log("🔄 [ChatPage] Today:", today);
 
       // Query userUsage model for current user and today's period
       const result = await client.models.userUsage.list({
@@ -960,8 +1034,8 @@ export default function ChatPage() {
           "🎉 [ChatPage] AI response added to conversation successfully"
         );
 
-        // Refresh usage data after successful response
-        fetchUsageData();
+        // Update usage data after successful response
+        await updateUsageData(responseData.usage);
       } else {
         console.error("❌ [ChatPage] No response data received from Bedrock");
         throw new Error("No response data received");
