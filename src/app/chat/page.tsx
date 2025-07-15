@@ -274,6 +274,11 @@ export default function ChatPage() {
           period: { eq: today },
         },
       });
+      console.log("🔄 [ChatPage] Usage data:", result);
+      console.log(
+        "🔄 [ChatPage] Usage data:",
+        await client.models.userUsage.list()
+      );
 
       if (result.errors && result.errors.length > 0) {
         console.error(
