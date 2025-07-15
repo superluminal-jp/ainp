@@ -19,6 +19,11 @@ DEFAULT_DAILY_TOKEN_LIMIT = 50000
 DEFAULT_DAILY_REQUEST_LIMIT = 100
 
 
+def get_current_period() -> str:
+    """Get current period string for daily limits (YYYY-MM-DD format)."""
+    return datetime.now().strftime("%Y-%m-%d")
+
+
 def get_user_id_from_event(event: Dict[str, Any]) -> str:
     """Extract user ID from the event."""
     try:
@@ -36,11 +41,6 @@ def get_user_id_from_event(event: Dict[str, Any]) -> str:
     except Exception as e:
         logger.error(f"Error extracting user ID: {str(e)}")
         return "anonymous"
-
-
-def get_current_period() -> str:
-    """Get current period in YYYY-MM-DD format."""
-    return datetime.now().strftime("%Y-%m-%d")
 
 
 def query_cloudwatch_logs(
