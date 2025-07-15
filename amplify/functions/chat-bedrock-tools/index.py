@@ -491,18 +491,40 @@ def get_user_usage(user_id: str) -> Dict[str, Any]:
         period = get_current_period()
         logger.info(f"Getting user usage for {user_id} in period {period}")
 
-        response = user_usage_table.get_item(Key={"userId": user_id, "period": period})
-        logger.info(f"user_usage_table.get_item response: {response}")
+        # Scan for records with the userId and period pattern
+        # Since we don't know the exact unix timestamp, we need to scan for today's records
+        response = user_usage_table.scan(
+            FilterExpression=Attr("id").begins_with(f"{user_id}#{period}#")
+        )
+        logger.info(f"user_usage_table.scan response: {response}")
 
-        if "Item" in response:
-            item = response["Item"]
+        items = response.get("Items", [])
+        if items:
+            # If multiple records exist for the same day, aggregate them
+            total_tokens = sum(item.get("totalTokens", 0) for item in items)
+            total_requests = sum(item.get("totalRequests", 0) for item in items)
+            input_tokens = sum(item.get("inputTokens", 0) for item in items)
+            output_tokens = sum(item.get("outputTokens", 0) for item in items)
+
+            # Use values from the most recent record for limits
+            latest_item = max(
+                items,
+                key=lambda x: (
+                    x.get("id", "").split("#")[-1]
+                    if len(x.get("id", "").split("#")) >= 3
+                    else "0"
+                ),
+            )
+
             return {
-                "totalTokens": item.get("totalTokens", 0),
-                "totalRequests": item.get("totalRequests", 0),
-                "inputTokens": item.get("inputTokens", 0),
-                "outputTokens": item.get("outputTokens", 0),
-                "tokenLimit": item.get("tokenLimit", DEFAULT_DAILY_TOKEN_LIMIT),
-                "requestLimit": item.get("requestLimit", DEFAULT_DAILY_REQUEST_LIMIT),
+                "totalTokens": total_tokens,
+                "totalRequests": total_requests,
+                "inputTokens": input_tokens,
+                "outputTokens": output_tokens,
+                "tokenLimit": latest_item.get("tokenLimit", DEFAULT_DAILY_TOKEN_LIMIT),
+                "requestLimit": latest_item.get(
+                    "requestLimit", DEFAULT_DAILY_REQUEST_LIMIT
+                ),
                 "period": period,
             }
         else:
@@ -558,35 +580,35 @@ def update_user_usage(user_id: str, usage_data: Dict[str, Any]) -> bool:
     try:
         period = get_current_period()
         current_time = datetime.now().isoformat()
+        unix_timestamp = int(datetime.now().timestamp())
+
+        # Create the composite id in the format: userId#date#unix_timestamp
+        record_id = f"{user_id}#{period}#{unix_timestamp}"
 
         # Extract usage data
         input_tokens = usage_data.get("inputTokens", 0)
         output_tokens = usage_data.get("outputTokens", 0)
         total_tokens = usage_data.get("totalTokens", input_tokens + output_tokens)
 
-        # Update or create usage record
-        response = user_usage_table.update_item(
-            Key={"userId": user_id, "period": period},
-            UpdateExpression="""
-                ADD totalTokens :total_tokens,
-                    totalRequests :one,
-                    inputTokens :input_tokens,
-                    outputTokens :output_tokens
-                SET lastUpdated = :last_updated,
-                    updatedAt = :updated_at
-            """,
-            ExpressionAttributeValues={
-                ":total_tokens": total_tokens,
-                ":one": 1,
-                ":input_tokens": input_tokens,
-                ":output_tokens": output_tokens,
-                ":last_updated": current_time,
-                ":updated_at": current_time,
-            },
-            ReturnValues="ALL_NEW",
+        # Create a new usage record with the composite id
+        response = user_usage_table.put_item(
+            Item={
+                "id": record_id,
+                "userId": user_id,
+                "period": period,
+                "totalTokens": total_tokens,
+                "totalRequests": 1,
+                "inputTokens": input_tokens,
+                "outputTokens": output_tokens,
+                "tokenLimit": DEFAULT_DAILY_TOKEN_LIMIT,
+                "requestLimit": DEFAULT_DAILY_REQUEST_LIMIT,
+                "lastUpdated": current_time,
+                "updatedAt": current_time,
+                "createdAt": current_time,
+            }
         )
 
-        logger.info(f"Updated usage for user {user_id}: {response['Attributes']}")
+        logger.info(f"Created usage record for user {user_id} with id: {record_id}")
         return True
 
     except Exception as e:
